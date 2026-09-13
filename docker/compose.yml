@@ -71,6 +71,54 @@ services:
       exit 0
       "
 
+
+
+    
+    # ---------- Kafka (KRaft mode, no Zookeeper) ----------
+  kafka:
+    image: apache/kafka:4.0.2
+    container_name: bankval-kafka
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 0
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 0@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  # ---------- Kafka init (creates the topic) ----------
+  kafka-init:
+    image: apache/kafka:4.0.2
+    container_name: bankval-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        /opt/kafka/bin/kafka-topics.sh \
+          --bootstrap-server kafka:9092 \
+          --create --if-not-exists \
+          --topic bank-uploads \
+          --partitions 3 \
+          --replication-factor 1
+        echo "Topic bank-uploads ready"
+
   # ---------- Django (web) ----------
   web:
     build:
@@ -93,6 +141,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
 
   # ---------- Celery worker (async tasks) ----------
   celery:
@@ -111,7 +161,10 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
 
 volumes:
   postgres_data:
   minio_data:
+  kafka_data:
