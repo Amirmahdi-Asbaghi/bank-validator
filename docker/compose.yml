@@ -151,6 +151,30 @@ services:
       - ../spark_jobs:/opt/spark-jobs
     depends_on:
       - spark-master
+
+
+  # ---------- ClickHouse (gold aggregation store) ----------
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8-alpine
+    container_name: bankval-clickhouse
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ports:
+      - "8123:8123"
+      - "9009:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./init/clickhouse-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --query 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    
   # ---------- Django (web) ----------
   web:
     build:
@@ -175,6 +199,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      clickhouse:
+        condition: service_healthy
 
   # ---------- Celery worker (async tasks) ----------
   celery:
@@ -195,8 +221,11 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      clickhouse:
+        condition: service_healthy
 
 volumes:
   postgres_data:
   minio_data:
   kafka_data:
+  clickhouse_data:

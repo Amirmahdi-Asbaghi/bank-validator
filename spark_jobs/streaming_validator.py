@@ -13,6 +13,8 @@ from __future__ import annotations
 import os
 import sys
 
+import clickhouse_connect
+
 from pyspark.sql import SparkSession, functions as F
 from pyspark.sql.types import StringType, StructField, StructType
 
@@ -46,6 +48,38 @@ def read_event_value(df):
     )
 
 
+def _write_clickhouse_summary(run_id, bank_code, period, valid, invalid, errors_by_code):
+    """Insert one summary row into the ClickHouse gold table."""
+    from datetime import datetime
+
+    client = clickhouse_connect.get_client(
+        host=os.environ.get("CLICKHOUSE_HOST", "clickhouse"),
+        port=int(os.environ.get("CLICKHOUSE_PORT", "8123")),
+        username=os.environ.get("CLICKHOUSE_USER", "default"),
+        password=os.environ.get("CLICKHOUSE_PASSWORD", "") or "",
+        database=os.environ.get("CLICKHOUSE_DB", "bankval"),
+    )
+    now = datetime.utcnow()
+    client.insert(
+        "validation_summary",
+        [[
+            run_id,
+            bank_code or "",
+            period or "",
+            int(valid + invalid),
+            int(valid),
+            int(invalid),
+            0,
+            errors_by_code or {},
+            now,
+            now,
+        ]],
+        column_names=[
+            "run_id", "bank_code", "period",
+            "total_records", "valid_count", "invalid_count", "duplicate_count",
+            "errors_by_code", "created_at", "finished_at",
+        ],
+    )
 def process_batch(batch_df, batch_id):
     """Called by foreachBatch for each micro-batch."""
     rows = batch_df.collect()
@@ -88,6 +122,28 @@ def process_batch(batch_df, batch_id):
             v = valid_df.count()
             i = invalid_df.count()
             print(f"[streaming] run {run_id}: valid={v} invalid={i}")
+
+            # Aggregate error codes for the gold summary
+            error_rows = (
+                invalid_df
+                .select(F.explode("error_codes").alias("code"))
+                .groupBy("code").count()
+                .collect()
+            )
+            errors_by_code = {r["code"]: int(r["count"]) for r in error_rows}
+
+            try:
+                _write_clickhouse_summary(
+                    run_id=run_id,
+                    bank_code=row["bank_code"] or "",
+                    period=row["period"] or "",
+                    valid=v,
+                    invalid=i,
+                    errors_by_code=errors_by_code,
+                )
+                print(f"[streaming] ClickHouse summary written for {run_id}")
+            except Exception as ch_exc:  # noqa: BLE001
+                print(f"[streaming] ClickHouse write failed for {run_id}: {ch_exc}")
         except Exception as exc:  # noqa: BLE001
             print(f"[streaming] run {run_id} FAILED: {exc}")
 
