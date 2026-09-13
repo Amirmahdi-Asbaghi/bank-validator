@@ -119,9 +119,11 @@ def run_validation_from_bytes(run: ValidationRun, content: bytes) -> ValidationR
 
 def run_validation_sync(filename: str, content: bytes) -> ValidationRun:
     """Synchronous path — small files. Blocks the request until done."""
+    path = save_uploaded_file(filename, content)
+
     run = ValidationRun.objects.create(
         file_hash=_file_hash(content),
-        source_file=filename,
+        source_file=path,
         file_size_bytes=len(content),
         status=ValidationRun.Status.RUNNING,
         started_at=timezone.now(),

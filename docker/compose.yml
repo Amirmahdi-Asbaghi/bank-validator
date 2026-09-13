@@ -33,6 +33,44 @@ services:
       timeout: 3s
       retries: 10
 
+
+    # ---------- MinIO (S3-compatible object storage) ----------
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: bankval-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ---------- MinIO init (creates buckets on startup) ----------
+  minio-init:
+    image: quay.io/minio/mc:latest
+    container_name: bankval-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD} &&
+      mc mb --ignore-existing local/raw &&
+      mc mb --ignore-existing local/curated &&
+      mc mb --ignore-existing local/quarantine &&
+      echo 'Buckets ready: raw, curated, quarantine' &&
+      exit 0
+      "
+
   # ---------- Django (web) ----------
   web:
     build:
@@ -53,6 +91,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_healthy
 
   # ---------- Celery worker (async tasks) ----------
   celery:
@@ -69,6 +109,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_healthy
 
 volumes:
   postgres_data:
+  minio_data:
