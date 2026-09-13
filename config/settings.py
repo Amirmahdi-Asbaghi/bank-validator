@@ -131,6 +131,7 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = "UTC"
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 
 # ---------- Django REST Framework ----------
 REST_FRAMEWORK = {
@@ -181,5 +182,10 @@ CLICKHOUSE_DB = env("CLICKHOUSE_DB", default="bankval")
 CLICKHOUSE_USER = env("CLICKHOUSE_USER", default="default")
 CLICKHOUSE_PASSWORD = env("CLICKHOUSE_PASSWORD", default="")
 
+
 # ---------- App-level constants ----------
 SMALL_FILE_THRESHOLD = env.int("SMALL_FILE_THRESHOLD", default=50 * 1024 * 1024)
+
+
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
