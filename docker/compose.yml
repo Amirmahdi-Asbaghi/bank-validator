@@ -119,6 +119,38 @@ services:
           --replication-factor 1
         echo "Topic bank-uploads ready"
 
+
+      # ---------- Spark master ----------
+  spark-master:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.spark
+    image: bankval-spark:dev
+    container_name: bankval-spark-master
+    restart: unless-stopped
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    volumes:
+      - ../spark_jobs:/opt/spark-jobs
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  # ---------- Spark worker ----------
+  spark-worker:
+    image: bankval-spark:dev
+    container_name: bankval-spark-worker
+    restart: unless-stopped
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    environment:
+      SPARK_WORKER_MEMORY: 1G
+      SPARK_WORKER_CORES: 2
+    volumes:
+      - ../spark_jobs:/opt/spark-jobs
+    depends_on:
+      - spark-master
   # ---------- Django (web) ----------
   web:
     build:
