@@ -78,8 +78,15 @@ data/samples/*.csv
 data/samples/*.json
 data/samples/*.parquet
 !data/samples/.gitkeep
-data/raw/
-data/processed/
+!data/samples/valid_small.csv
+!data/samples/invalid_small.csv
+!data/samples/duplicate_small.csv
+!data/samples/balance_mismatch.csv
+!data/samples/valid_small.json
+!data/samples/invalid_small.json
+!data/samples/expected_valid_output.json
+!data/samples/expected_invalid_output.json
+!data/samples/README.md
 
 # ============================
 # Spark

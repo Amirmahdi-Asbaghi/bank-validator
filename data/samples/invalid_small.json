@@ -1,0 +1,8 @@
+{
+  "records": [
+    {"bank_code": "999", "period": "1405/03", "account_code": "A1", "debit": "100.00", "credit": "40.00", "balance": "60.00", "currency": "IRR", "record_id": "R1"},
+    {"bank_code": "010", "period": "1405-03", "account_code": "A2", "debit": "200.00", "credit": "50.00", "balance": "999.00", "currency": "IRR", "record_id": "R2"},
+    {"bank_code": "010", "period": "1405/03", "account_code": "A3", "debit": "100.00", "credit": "40.00", "balance": "60.00", "currency": "IRR", "record_id": "R3"},
+    {"bank_code": "010", "period": "1405/03", "account_code": "A3", "debit": "100.00", "credit": "40.00", "balance": "60.00", "currency": "IRR", "record_id": "R3"}
+  ]
+}

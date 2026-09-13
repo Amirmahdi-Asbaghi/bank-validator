@@ -1,0 +1,17 @@
+{
+  "endpoint": "POST /api/v1/validation",
+  "input": "invalid_small.csv",
+  "expected": {
+    "status": "completed",
+    "total_records": 4,
+    "valid_count": 1,
+    "invalid_count": 3,
+    "duplicate_count": 1,
+    "errors_by_code": {
+      "E004": 1,
+      "E005": 1,
+      "E006": 1,
+      "E007": 1
+    }
+  }
+}

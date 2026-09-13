@@ -1,0 +1,4 @@
+bank_code,period,account_code,debit,credit,balance,currency,record_id
+010,1405/03,A1,100.00,40.00,60.00,IRR,R1
+010,1405/03,A2,200.00,50.00,150.00,IRR,R2
+020,1405/03,A3,10.00,0.00,10.00,IRR,R3
