@@ -1,0 +1,4 @@
+bank_code,name,is_active
+010,Bank A,true
+020,Bank B,true
+030,Bank C,true
