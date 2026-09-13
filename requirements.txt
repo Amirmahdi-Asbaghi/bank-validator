@@ -1,0 +1,47 @@
+# Django core
+Django==5.0.6
+djangorestframework==3.15.1
+drf-spectacular==0.27.2
+
+# Database
+psycopg[binary]==3.1.19
+
+# Celery + broker
+celery==5.4.0
+redis==5.0.4
+
+# Object storage (MinIO / S3)
+boto3==1.34.120
+django-storages==1.14.3
+
+# Kafka
+kafka-python==2.0.2
+
+# ClickHouse
+clickhouse-connect==0.7.16
+
+# PySpark (small-file Spark path & rule parity)
+pyspark==3.5.1
+
+# Delta Lake (used inside Spark jobs)
+delta-spark==3.2.0
+
+# Data / config
+pandas==2.2.2
+python-dotenv==1.0.1
+django-environ==0.11.2
+
+# HTTP / API
+requests==2.32.3
+
+# Server
+gunicorn==22.0.0
+
+# Testing & linting (dev)
+pytest==8.2.2
+pytest-django==4.8.0
+pytest-spark==0.6.0
+httpx==0.27.0
+ruff==0.4.10
+black==24.4.2
+mypy==1.10.0
