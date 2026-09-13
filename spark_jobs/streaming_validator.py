@@ -80,6 +80,7 @@ def _write_clickhouse_summary(run_id, bank_code, period, valid, invalid, errors_
             "errors_by_code", "created_at", "finished_at",
         ],
     )
+
 def process_batch(batch_df, batch_id):
     """Called by foreachBatch for each micro-batch."""
     rows = batch_df.collect()
