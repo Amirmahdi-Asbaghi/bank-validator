@@ -1,0 +1,103 @@
+"""Upload service: parse file, run rules, persist valid/invalid records."""
+from __future__ import annotations
+
+import hashlib
+from typing import Any
+
+from django.db import transaction
+from django.utils import timezone
+
+from apps.validation.models import (
+    BankReference,
+    InvalidRecord,
+    ValidRecord,
+    ValidationRun,
+)
+from apps.validation.rules.engine import validate_batch
+
+from .parsers import ParseError, parse_file
+
+
+def _file_hash(content: bytes) -> str:
+    return hashlib.sha256(content).hexdigest()
+
+
+def _allowed_bank_codes() -> set[str]:
+    return set(
+        BankReference.objects.filter(is_active=True).values_list("bank_code", flat=True)
+    )
+
+
+def run_validation(filename: str, content: bytes) -> ValidationRun:
+    run = ValidationRun.objects.create(
+        file_hash=_file_hash(content),
+        source_file=filename,
+        file_size_bytes=len(content),
+        status=ValidationRun.Status.RUNNING,
+        started_at=timezone.now(),
+    )
+
+    try:
+        records = parse_file(filename, content)
+        result = validate_batch(records, allowed_bank_codes=_allowed_bank_codes())
+
+        with transaction.atomic():
+            for outcome in result["outcomes"]:
+                raw = outcome["raw_row"]
+                if outcome["is_valid"]:
+                    ValidRecord.objects.create(
+                        run=run,
+                        row_number=outcome["row_number"],
+                        bank_code=str(raw.get("bank_code", "")),
+                        period=str(raw.get("period", "")),
+                        account_code=str(raw.get("account_code", "")),
+                        debit=_dec(raw.get("debit")) or 0,
+                        credit=_dec(raw.get("credit")) or 0,
+                        balance=_dec(raw.get("balance")) or 0,
+                        record_id=str(raw.get("record_id", "") or ""),
+                        currency=str(raw.get("currency", "") or ""),
+                        branch_code=str(raw.get("branch_code", "") or ""),
+                        description=str(raw.get("description", "") or ""),
+                    )
+                else:
+                    InvalidRecord.objects.create(
+                        run=run,
+                        row_number=outcome["row_number"],
+                        raw_row=raw,
+                        error_codes=outcome["error_codes"],
+                        error_messages=outcome["error_messages"],
+                    )
+
+        summary = result["summary"]
+        run.total_records = summary["total"]
+        run.valid_count = summary["valid"]
+        run.invalid_count = summary["invalid"]
+        run.duplicate_count = summary["duplicates"]
+        run.errors_by_code = summary["errors_by_code"]
+        run.status = ValidationRun.Status.COMPLETED
+        run.finished_at = timezone.now()
+        run.save()
+
+    except ParseError as e:
+        run.status = ValidationRun.Status.FAILED
+        run.error_message = str(e)
+        run.finished_at = timezone.now()
+        run.save()
+    except Exception as e:  # noqa: BLE001
+        run.status = ValidationRun.Status.FAILED
+        run.error_message = f"{type(e).__name__}: {e}"
+        run.finished_at = timezone.now()
+        run.save()
+        raise
+
+    return run
+
+
+def _dec(value: Any):
+    from decimal import Decimal, InvalidOperation
+    if value is None or value == "":
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
