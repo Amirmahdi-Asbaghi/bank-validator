@@ -258,6 +258,38 @@ services:
       - ../airflow/dags:/opt/airflow/dags
       - airflow_logs:/opt/airflow/logs
 
+    # ---------- Prometheus (metrics scrape + storage) ----------
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: bankval-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+
+  # ---------- Grafana (dashboards) ----------
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: bankval-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    
   # ---------- Django (web) ----------
   web:
     build:
@@ -306,6 +338,7 @@ services:
         condition: service_healthy
       clickhouse:
         condition: service_healthy
+      
 
 volumes:
   postgres_data:
@@ -314,3 +347,5 @@ volumes:
   clickhouse_data:
   airflow_postgres_data:
   airflow_logs:
+  prometheus_data:
+  grafana_data:

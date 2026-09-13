@@ -1,5 +1,6 @@
 from django.contrib import admin
 from django.urls import include, path
+from apps.common.metrics import metrics_view
 from drf_spectacular.views import (
     SpectacularAPIView,
     SpectacularSwaggerView,
@@ -15,4 +16,6 @@ urlpatterns = [
     # OpenAPI schema + Swagger UI
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/schema/swagger/", SpectacularSwaggerView.as_view(url_name="schema")),
+
+    path("metrics", metrics_view, name="metrics"),
 ]

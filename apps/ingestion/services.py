@@ -15,6 +15,15 @@ from apps.validation.models import (
     ValidRecord,
     ValidationRun,
 )
+
+from apps.common.metrics import (
+    RECORDS_UPLOADED_TOTAL,
+    RECORDS_VALID_TOTAL,
+    RECORDS_INVALID_TOTAL,
+    RUNS_TOTAL,
+)
+
+
 from apps.validation.rules.engine import validate_batch
 
 from .parsers import ParseError, parse_file
@@ -96,6 +105,10 @@ def run_validation_from_bytes(run: ValidationRun, content: bytes) -> ValidationR
         run.errors_by_code = summary["errors_by_code"]
         run.status = ValidationRun.Status.COMPLETED
         run.finished_at = timezone.now()
+        # Prometheus counters
+        RECORDS_UPLOADED_TOTAL.inc(summary["total"])
+        RECORDS_VALID_TOTAL.inc(summary["valid"])
+        RECORDS_INVALID_TOTAL.inc(summary["invalid"])
         run.save()
 
     except ParseError as e:
@@ -128,6 +141,9 @@ def run_validation_sync(filename: str, content: bytes) -> ValidationRun:
         status=ValidationRun.Status.RUNNING,
         started_at=timezone.now(),
     )
+
+    RUNS_TOTAL.labels(path="sync").inc() #promethus
+
     return run_validation_from_bytes(run, content)
 
 
@@ -160,5 +176,7 @@ def run_validation_async(filename: str, content: bytes) -> ValidationRun:
         run.error_message = f"Kafka publish failed: {e}"
         run.save(update_fields=["status", "error_message"])
         raise
+
+    RUNS_TOTAL.labels(path="async_kafka").inc()
 
     return run

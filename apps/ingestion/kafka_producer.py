@@ -7,9 +7,21 @@ import logging
 from confluent_kafka import Producer
 from django.conf import settings
 
+from apps.common.metrics import KAFKA_PUBLISH_ERRORS_TOTAL
+
+
+
+
+
 logger = logging.getLogger(__name__)
 
 _producer: Producer | None = None
+
+
+except KafkaError as e:
+    KAFKA_PUBLISH_ERRORS_TOTAL.inc()
+    logger.exception("Failed to publish validation event for run %s: %s", run_id, e)
+    raise
 
 
 def _get_producer() -> Producer:
