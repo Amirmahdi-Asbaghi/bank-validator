@@ -175,6 +175,89 @@ services:
       timeout: 5s
       retries: 10
     
+
+    # ---------- Airflow (orchestration) ----------
+  airflow-postgres:
+    image: postgres:16-alpine
+    container_name: bankval-airflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: airflow
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+    volumes:
+      - airflow_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  airflow-init:
+    image: apache/airflow:2.9.3-python3.11
+    container_name: bankval-airflow-init
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      _AIRFLOW_DB_MIGRATE: "true"
+      _AIRFLOW_WWW_USER_CREATE: "true"
+      _AIRFLOW_WWW_USER_USERNAME: airflow
+      _AIRFLOW_WWW_USER_PASSWORD: airflow
+    command: version
+    user: "50000:0"
+    volumes:
+      - ../airflow/dags:/opt/airflow/dags
+
+  airflow-webserver:
+    image: apache/airflow:2.9.3-python3.11
+    container_name: bankval-airflow-webserver
+    restart: unless-stopped
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+    ports:
+      - "8081:8080"
+    command: webserver
+    user: "50000:0"
+    volumes:
+      - ../airflow/dags:/opt/airflow/dags
+      - airflow_logs:/opt/airflow/logs
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  airflow-scheduler:
+    image: apache/airflow:2.9.3-python3.11
+    container_name: bankval-airflow-scheduler
+    restart: unless-stopped
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    command: scheduler
+    user: "50000:0"
+    volumes:
+      - ../airflow/dags:/opt/airflow/dags
+      - airflow_logs:/opt/airflow/logs
+
   # ---------- Django (web) ----------
   web:
     build:
@@ -229,3 +312,5 @@ volumes:
   minio_data:
   kafka_data:
   clickhouse_data:
+  airflow_postgres_data:
+  airflow_logs:
