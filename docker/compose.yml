@@ -1,0 +1,74 @@
+name: bankval
+
+services:
+  # ---------- PostgreSQL (Django DB) ----------
+  postgres:
+    image: postgres:16-alpine
+    container_name: bankval-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ---------- Redis (Celery broker) ----------
+  redis:
+    image: redis:7-alpine
+    container_name: bankval-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ---------- Django (web) ----------
+  web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.web
+    image: bankval-web:dev
+    container_name: bankval-web
+    restart: unless-stopped
+    command: python manage.py runserver 0.0.0.0:8000
+    env_file:
+      - ../.env
+    volumes:
+      - ..:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ---------- Celery worker (async tasks) ----------
+  celery:
+    image: bankval-web:dev
+    container_name: bankval-celery
+    restart: unless-stopped
+    command: celery -A config worker --loglevel=info
+    env_file:
+      - ../.env
+    volumes:
+      - ..:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

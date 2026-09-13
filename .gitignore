@@ -44,6 +44,9 @@ local_settings.py
 .env
 .env.*
 !.env.example
+docker/.env
+docker/.env.*
+!docker/.env.example
 
 # ============================
 # Docker
