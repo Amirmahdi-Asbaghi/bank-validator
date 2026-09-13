@@ -132,18 +132,33 @@ def run_validation_sync(filename: str, content: bytes) -> ValidationRun:
 
 
 def run_validation_async(filename: str, content: bytes) -> ValidationRun:
-    """Asynchronous path — large files. Save file, enqueue Celery task."""
-    # Import here to avoid circular imports
-    from .tasks import validate_large_file
+    """
+    Asynchronous path — large files.
+    Save the file to MinIO, publish a Kafka event, return immediately.
+    The Spark consumer (later) will pick this up.
+    """
+    from .kafka_producer import publish_validation_event
 
     path = save_uploaded_file(filename, content)
 
     run = ValidationRun.objects.create(
         file_hash=_file_hash(content),
-        source_file=str(path),
+        source_file=path,
         file_size_bytes=len(content),
         status=ValidationRun.Status.QUEUED,
     )
 
-    validate_large_file.delay(str(run.id))
+    try:
+        publish_validation_event(
+            run_id=str(run.id),
+            source_file=path,
+            bank_code="",
+            period="",
+        )
+    except Exception as e:  # noqa: BLE001
+        run.status = ValidationRun.Status.FAILED
+        run.error_message = f"Kafka publish failed: {e}"
+        run.save(update_fields=["status", "error_message"])
+        raise
+
     return run
