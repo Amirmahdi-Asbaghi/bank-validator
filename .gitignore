@@ -1,0 +1,45 @@
+@"
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Django
+*.log
+db.sqlite3
+staticfiles/
+media/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Docker
+docker/volumes/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data (don't commit large files)
+data/samples/*.csv
+data/samples/*.json
+!data/samples/.gitkeep
+
+# Spark
+spark-warehouse/
+metastore_db/
+derby.log
+"@ | Out-File -Encoding utf8 .gitignore
