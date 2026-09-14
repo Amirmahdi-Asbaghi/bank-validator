@@ -17,7 +17,8 @@ COMPOSE := docker compose -f docker/compose.yml
 .PHONY: help up up-dev down reset build migrate makemigrations seed \
         test test-unit test-api lint format check shell psql clickhouse \
         kafka-topics logs ps clean restart-web rebuild-web rebuild-spark \
-        demo big-file show-delta submit-batch
+        demo big-file show-delta submit-batch streaming
+
 
 help:
 	@echo "Targets:"
@@ -59,6 +60,7 @@ help:
 	@echo "    big-file                         Generate the 51 MB test file"
 	@echo "    show-delta RUN_ID=...            Read a Delta table with Spark"
 	@echo "    submit-batch RUN_ID=... SOURCE=...  Re-run the batch validator"
+	@echo "    streaming                        Run the Spark streaming consumer (async path)"
 
 # ---------- Stack management ----------
 
@@ -184,29 +186,38 @@ show-delta:
 	  /opt/spark-jobs/show_delta.py \
 	  $(or $(BUCKET),curated) $(RUN_ID) $(ERROR_CODE)
 
+# Run the Spark streaming consumer (long-running; keep this terminal open).
+# The async path (Kafka → Spark → Delta → ClickHouse) only processes
+# events while this job is running.
+streaming:
+	@echo "Starting the streaming consumer..."
+	@echo "Leave this terminal open. Press Ctrl+C to stop."
+	@echo ""
+	$(COMPOSE) exec spark-master /opt/spark/bin/spark-submit \
+	  --master spark://spark-master:7077 \
+	  --driver-memory 2g --executor-memory 1g \
+	  --jars /opt/spark/jars/delta-spark_2.12-3.2.0.jar,/opt/spark/jars/delta-storage-3.2.0.jar,/opt/spark/jars/hadoop-aws-3.3.4.jar,/opt/spark/jars/aws-java-sdk-bundle-1.12.262.jar \
+	  --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1 \
+	  /opt/spark-jobs/streaming_validator.py
+
+
 # ---------- Demo ----------
 
 demo: up
 	@echo ""
-	@echo ">> Waiting for web to be ready..."
-	@timeout=30; \
-	  until curl.exe -sf http://localhost:8000/api/schema/ >/dev/null 2>&1; do \
-	    sleep 1; timeout=$$((timeout-1)); \
-	    if [ $$timeout -le 0 ]; then echo "web not ready after 30s"; exit 1; fi; \
-	  done
 	@echo ">> Applying migrations..."
-	@$(COMPOSE) exec web python manage.py migrate --noinput
+	@$(COMPOSE) exec -T web python manage.py migrate --noinput
 	@echo ""
 	@echo ">> Seeding bank reference data..."
-	@$(COMPOSE) exec web python manage.py seed_bank_codes
+	@$(COMPOSE) exec -T web python manage.py seed_bank_codes
 	@echo ""
 	@echo ">> Uploading valid_small.csv..."
-	@curl.exe -s -X POST -F "file=@data/samples/valid_small.csv" \
-	  http://localhost:8000/api/v1/validation | python -m json.tool
+	@curl.exe -s -X POST -F "file=@data/samples/valid_small.csv" http://localhost:8000/api/v1/validation
+	@echo ""
 	@echo ""
 	@echo ">> Uploading invalid_small.csv..."
-	@curl.exe -s -X POST -F "file=@data/samples/invalid_small.csv" \
-	  http://localhost:8000/api/v1/validation | python -m json.tool
+	@curl.exe -s -X POST -F "file=@data/samples/invalid_small.csv" http://localhost:8000/api/v1/validation
+	@echo ""
 	@echo ""
 	@echo "==============================================="
 	@echo " Demo complete."
