@@ -16,8 +16,8 @@ COMPOSE := docker compose -f docker/compose.yml
 
 .PHONY: help up up-dev down reset build migrate makemigrations seed \
         test test-unit test-api lint format check shell psql clickhouse \
-        kafka-topics logs ps clean restart-web rebuild-web rebuild-spark \
-        demo big-file show-delta submit-batch streaming
+        clickhouse-init kafka-topics logs ps clean restart-web rebuild-web \
+        rebuild-spark demo big-file show-delta submit-batch streaming
 
 
 help:
@@ -53,6 +53,7 @@ help:
 	@echo "    logs SERVICE=web       Tail logs of one service"
 	@echo "    psql                   Open a Postgres shell"
 	@echo "    clickhouse             Open a ClickHouse shell"
+	@echo "    clickhouse-init        Create ClickHouse schema if missing"
 	@echo "    kafka-topics           List Kafka topics"
 	@echo ""
 	@echo "  Jobs:"
@@ -64,9 +65,11 @@ help:
 
 # ---------- Stack management ----------
 
-up: 
+up:
 	$(COMPOSE) up -d
-	$(MAKE) clickhouse-init
+	@echo "Waiting for ClickHouse to be ready..."
+	@sleep 15
+	@$(MAKE) clickhouse-init
 	@echo "Services:"
 	@$(COMPOSE) ps
 
@@ -154,8 +157,10 @@ clickhouse:
 	$(COMPOSE) exec clickhouse clickhouse-client
 
 clickhouse-init:
-	$(COMPOSE) exec clickhouse clickhouse-client --query "CREATE DATABASE IF NOT EXISTS bankval"
-	$(COMPOSE) exec clickhouse clickhouse-client --query "CREATE TABLE IF NOT EXISTS bankval.validation_summary (run_id UUID, bank_code String, period String, total_records UInt32, valid_count UInt32, invalid_count UInt32, duplicate_count UInt32, errors_by_code Map(String, UInt32), created_at DateTime DEFAULT now(), finished_at Nullable(DateTime)) ENGINE = MergeTree() ORDER BY (bank_code, period, created_at) SETTINGS index_granularity = 8192"
+	@echo "Ensuring ClickHouse schema..."
+	@$(COMPOSE) exec clickhouse clickhouse-client --query "CREATE DATABASE IF NOT EXISTS bankval"
+	@$(COMPOSE) exec clickhouse clickhouse-client --query "CREATE TABLE IF NOT EXISTS bankval.validation_summary (run_id UUID, bank_code String, period String, total_records UInt32, valid_count UInt32, invalid_count UInt32, duplicate_count UInt32, errors_by_code Map(String, UInt32), created_at DateTime DEFAULT now(), finished_at Nullable(DateTime)) ENGINE = MergeTree() ORDER BY (bank_code, period, created_at) SETTINGS index_granularity = 8192"
+	@echo "ClickHouse schema ready."
 
 kafka-topics:
 	$(COMPOSE) exec kafka /opt/kafka/bin/kafka-topics.sh \
@@ -184,7 +189,7 @@ show-delta:
 	  $(or $(BUCKET),curated) $(RUN_ID) $(ERROR_CODE)
 
 # Run the Spark streaming consumer (long-running; keep this terminal open).
-# The async path (Kafka → Spark → Delta → ClickHouse) only processes
+# The async path (Kafka -> Spark -> Delta -> ClickHouse) only processes
 # events while this job is running.
 streaming:
 	@echo "Starting the streaming consumer..."
@@ -197,7 +202,6 @@ streaming:
 	  --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1 \
 	  /opt/spark-jobs/streaming_validator.py
 
-
 # ---------- Demo ----------
 
 demo: up
@@ -207,6 +211,9 @@ demo: up
 	@echo ""
 	@echo ">> Seeding bank reference data..."
 	@$(COMPOSE) exec -T web python manage.py seed_bank_codes
+	@echo ""
+	@echo ">> Ensuring ClickHouse schema..."
+	@$(MAKE) clickhouse-init
 	@echo ""
 	@echo ">> Uploading valid_small.csv..."
 	@curl.exe -s -X POST -F "file=@data/samples/valid_small.csv" http://localhost:8000/api/v1/validation
