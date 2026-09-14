@@ -505,21 +505,7 @@ non-contiguous IDs across partitions.
 | 011 | Checkpoint to S3 | Survive container restarts |
 | 012 | `monotonically_increasing_id` | Parallel-safe IDs |
 
----
 
-## For the interview
-
-If asked "why did you choose X?":
-
-> "I documented every significant decision in `docs/decisions.md`. It's
-> an ADR log — each entry states the context, the decision, the
-> consequences, and the alternatives considered. The two most interesting
-> ones are ADR-005, where I hit a real Spark driver OOM and fixed it by
-> changing the expression shape, and ADR-004, on why money is Decimal
-> everywhere — `0.1 + 0.2` in float isn't `0.3`, and in financial
-> validation that's a critical bug."
-
----
 
 ## Related docs
 
