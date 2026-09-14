@@ -1,18 +1,21 @@
 """Read-only endpoints for inspecting a validation run.
 
-These views are the "serving" layer of the pipeline. They read from
-Postgres (operational state) and, indirectly, reflect what Spark has
-already written to Delta and ClickHouse.
+These endpoints serve two different storage backends depending on how the
+run was processed:
 
-    GET /api/v1/validation/{run_id}            — full run record
-    GET /api/v1/validation/{run_id}/summary    — compact aggregate
-    GET /api/v1/validation/{run_id}/invalid    — paginated invalid records
-    GET /api/v1/validation/{run_id}/valid      — paginated valid records
+    Sync path   (small files)
+        Django validates in-process and writes to Postgres.
+        All four endpoints are served directly from Postgres.
 
-Why these are read-only:
-    Runs are only created by the upload endpoint. All mutations happen
-    through the pipeline (Spark writing to Delta, ClickHouse summaries).
-    Exposing read endpoints lets clients poll without any write path.
+    Async path  (large files → Kafka → Spark)
+        Django only enqueues. Spark writes the actual results to
+        ClickHouse (summary) and Delta on MinIO (records).
+        For these runs, Postgres stays at status=queued forever, so the
+        endpoints fall back to ClickHouse to reflect the real state.
+
+This is a CQRS-style split: Postgres holds operational state, ClickHouse
+holds the analytical result. The `source` field in each response tells
+the client which store answered.
 """
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import (
@@ -24,6 +27,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.storage.clickhouse_client import fetch_summary
 from apps.validation.models import InvalidRecord, ValidRecord, ValidationRun
 
 from .serializers import (
@@ -34,19 +38,17 @@ from .serializers import (
 
 
 class InvalidPagination(PageNumberPagination):
-    """Pagination for the record listing endpoints.
+    """Pagination for record listings.
 
-    Default page size is 100 (reasonable for API browsing). Clients can
-    pass ?page_size=N up to 1000 to bulk-export without hundreds of
-    round-trips.
+    Default 100 rows keeps a single page small enough for a browser.
+    Clients can request up to 1000 per page for bulk export.
     """
     page_size = 100
     page_size_query_param = "page_size"
     max_page_size = 1000
 
 
-# Shared path parameter declaration for OpenAPI. Declared once to keep the
-# decorators short and the spec consistent across all four endpoints.
+# Declared once so all four endpoint schemas stay consistent.
 _RUN_ID_PARAM = OpenApiParameter(
     name="run_id",
     type=str,
@@ -55,19 +57,61 @@ _RUN_ID_PARAM = OpenApiParameter(
 )
 
 
-class RunDetailView(APIView):
-    """Return the current state of a run.
+def _resolve_run_state(run: ValidationRun) -> dict:
+    """Return the *real* state of a run, merging two sources.
 
-    Clients use this to poll after an async upload: the `status` field
-    transitions over time from `queued` to `running` to `completed`
-    (or `failed`).
+    Priority:
+      1. If Postgres already has finished numbers (sync path) → use them.
+      2. Otherwise, try ClickHouse (async path result written by Spark).
+      3. Otherwise, return Postgres as-is (still queued / processing).
+
+    A `source` key is added so clients can tell where the numbers came from.
+    This is what makes `/validation/{id}` and `/summary` accurate for both
+    paths with a single code path.
+    """
+    data = ValidationRunSerializer(run).data
+
+    # Sync path — Postgres has everything we need.
+    if run.status == "completed" and run.total_records > 0:
+        data["source"] = "postgres"
+        return data
+
+    # Async path — Postgres is stale, ask ClickHouse.
+    try:
+        ch = fetch_summary(str(run.id))
+    except Exception:
+        # ClickHouse unreachable shouldn't 500 the API. Fall through
+        # to returning the Postgres row (which will say "queued").
+        ch = None
+
+    if ch:
+        data["status"] = "completed"          # Spark only writes finished runs
+        data["total_records"] = ch.get("total", 0)
+        data["valid_count"] = ch.get("valid", 0)
+        data["invalid_count"] = ch.get("invalid", 0)
+        data["duplicate_count"] = ch.get("duplicates", 0)
+        data["errors_by_code"] = ch.get("errors_by_code", {})
+        data["source"] = "clickhouse"
+    else:
+        data["source"] = "postgres"
+
+    return data
+
+
+class RunDetailView(APIView):
+    """Full run record, merged from Postgres + ClickHouse.
+
+    Clients use this to poll after an async upload. `status` will flip
+    from `queued` to `completed` as soon as Spark writes the ClickHouse
+    summary — the API reflects that automatically.
     """
 
     @extend_schema(
         summary="Get a validation run by ID",
         description=(
-            "Returns the current state of a run. `status` transitions over time: "
-            "`queued` → `running` → `completed` (or `failed`)."
+            "Returns the current state of a run. For async runs, the summary "
+            "fields come from ClickHouse once Spark has finished. The "
+            "`source` field tells you which store answered."
         ),
         parameters=[_RUN_ID_PARAM],
         responses={
@@ -78,22 +122,22 @@ class RunDetailView(APIView):
     )
     def get(self, request, run_id):
         run = get_object_or_404(ValidationRun, id=run_id)
-        return Response(ValidationRunSerializer(run).data)
+        return Response(_resolve_run_state(run))
 
 
 class RunSummaryView(APIView):
-    """Return a compact aggregate for a run.
+    """Compact summary — just the counts, nothing else.
 
-    This is a lighter projection of the run: only the fields a dashboard
-    or a status page would need. The full record (with timestamps,
-    file_hash, etc.) is available via RunDetailView.
+    Same fallback logic as RunDetailView, but the response shape is
+    trimmed to what a dashboard or status page would use.
     """
 
     @extend_schema(
         summary="Get a compact summary for a run",
         description=(
-            "Returns counts per run: total, valid, invalid, duplicates, and a "
-            "map of `errors_by_code` (e.g. `{\"E004\": 1, \"E007\": 2}`)."
+            "Returns counts per run: total, valid, invalid, duplicates, "
+            "and `errors_by_code`. Reads from Postgres for sync runs, "
+            "from ClickHouse for async runs."
         ),
         parameters=[_RUN_ID_PARAM],
         responses={
@@ -104,21 +148,22 @@ class RunSummaryView(APIView):
     )
     def get(self, request, run_id):
         run = get_object_or_404(ValidationRun, id=run_id)
+        merged = _resolve_run_state(run)
+
         return Response(
             {
                 "run_id": str(run.id),
-                "bank_code": run.bank_code,
-                "period": run.period,
-                "status": run.status,
-                "total": run.total_records,
-                "valid": run.valid_count,
-                "invalid": run.invalid_count,
-                "duplicates": run.duplicate_count,
-                # errors_by_code is a JSONField on the model, so it's already
-                # a dict — no decoding needed.
-                "errors_by_code": run.errors_by_code,
+                "bank_code": merged.get("bank_code", ""),
+                "period": merged.get("period", ""),
+                "status": merged.get("status"),
+                "total": merged.get("total_records", 0),
+                "valid": merged.get("valid_count", 0),
+                "invalid": merged.get("invalid_count", 0),
+                "duplicates": merged.get("duplicate_count", 0),
+                "errors_by_code": merged.get("errors_by_code", {}),
+                "source": merged.get("source", "postgres"),
                 "created_at": run.created_at,
-                "finished_at": run.finished_at,
+                "finished_at": merged.get("finished_at"),
             }
         )
 
@@ -126,22 +171,24 @@ class RunSummaryView(APIView):
 class RunInvalidView(APIView):
     """Paginated list of invalid records for a run.
 
-    Each record carries three fields worth noting:
+    Reads from Postgres only. For async runs, records live in the Delta
+    quarantine table on MinIO — that data isn't mirrored to Postgres by
+    the streaming job yet. The OpenAPI description states this clearly
+    so clients know what to expect.
 
-        error_codes      — the rule codes that failed (e.g. ["E005","E007"])
-        error_messages   — human-readable explanations
-        raw_row          — the original input as parsed
-
-    `raw_row` is what makes reprocessing possible: the original data is
-    never lost, so a bank can fix the source and re-upload, or we can
-    replay the record through a corrected rule set.
+    Each returned record has:
+        error_codes     — machine-readable (e.g. ["E004","E007"])
+        error_messages  — human-readable
+        raw_row         — the original input, never modified
     """
 
     @extend_schema(
         summary="List invalid records for a run",
         description=(
-            "Paginated list of records that failed at least one rule. Each "
-            "record carries `error_codes`, `error_messages`, and `raw_row`."
+            "Paginated list of records that failed at least one rule. "
+            "Served from Postgres. For async runs, records are stored in "
+            "Delta on MinIO — this endpoint will be empty; use ClickHouse "
+            "or MinIO to inspect the records."
         ),
         parameters=[_RUN_ID_PARAM],
         responses={
@@ -153,8 +200,8 @@ class RunInvalidView(APIView):
     def get(self, request, run_id):
         run = get_object_or_404(ValidationRun, id=run_id)
 
-        # order_by row_number gives a stable, source-order listing — useful
-        # when cross-referencing against the original file.
+        # Stable ordering by row_number — matches the original file order
+        # so failures are easy to cross-reference with the source.
         qs = InvalidRecord.objects.filter(run=run).order_by("row_number")
 
         paginator = InvalidPagination()
@@ -166,14 +213,18 @@ class RunInvalidView(APIView):
 class RunValidView(APIView):
     """Paginated list of valid records for a run.
 
-    These are the rows that made it through every rule. In production,
-    downstream systems would read from the curated Delta table in MinIO
-    instead — this endpoint is a convenience for browsing and testing.
+    Same caveat as RunInvalidView — Postgres only. For sync runs this is
+    a complete listing; for async runs, the equivalent data is in the
+    curated Delta table on MinIO.
     """
 
     @extend_schema(
         summary="List valid records for a run",
-        description="Paginated list of records that passed every rule.",
+        description=(
+            "Paginated list of records that passed every rule. "
+            "Served from Postgres. For async runs, records are stored in "
+            "Delta on MinIO."
+        ),
         parameters=[_RUN_ID_PARAM],
         responses={
             200: ValidRecordSerializer(many=True),
