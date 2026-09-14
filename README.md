@@ -184,7 +184,6 @@ Upload the sample files and inspect the responses.
 
 ```bash
 curl.exe -X POST -F "file=@data/samples/valid_small.csv" "http://localhost:8000/api/v1/validation"
-
 ```
 
 ```json
@@ -200,8 +199,7 @@ curl.exe -X POST -F "file=@data/samples/valid_small.csv" "http://localhost:8000/
 **Invalid — 4 rows, one per error code:**
 
 ```bash
-curl -X POST -F "file=@data/samples/invalid_small.csv" \
-  http://localhost:8000/api/v1/validation
+curl.exe -X POST -F "file=@data/samples/invalid_small.csv" "http://localhost:8000/api/v1/validation"
 ```
 
 ```json
@@ -269,8 +267,7 @@ automatically by `make up`.
 Nothing to do. Just upload a file:
 
 ```bash
-curl -X POST -F "file=@data/samples/valid_small.csv" \
-  http://localhost:8000/api/v1/validation
+curl.exe -X POST -F "file=@data/samples/valid_small.csv" "http://localhost:8000/api/v1/validation"
 ```
 
 Returns **HTTP 201** with the full summary in under a second.
@@ -316,7 +313,6 @@ Within ~40–90 seconds you'll see:
 **4. Verify the result**
 
 ```bash
-
 docker exec bankval-clickhouse clickhouse-client --query "SELECT run_id, total_records, valid_count, invalid_count FROM bankval.validation_summary ORDER BY created_at DESC LIMIT 1"
 ```
 
@@ -344,6 +340,34 @@ make show-delta RUN_ID=<run-id> BUCKET=quarantine ERROR_CODE=E007
 ```
 
 Each command prints the row count, columns, and the first 20 rows.
+
+### Counting errors by code
+
+To see how many records failed each rule — not just the total — query
+the ClickHouse summary, which stores the per-code breakdown:
+
+```bash
+docker exec bankval-clickhouse clickhouse-client --query "SELECT run_id, total_records, valid_count, invalid_count, errors_by_code FROM bankval.validation_summary WHERE run_id = '<run-id>' FORMAT Vertical"
+```
+
+Example output:
+
+```
+run_id:          a0fe7d9c-2317-4433-bbcb-12a36c459f03
+total_records:   920088
+valid_count:     876467
+invalid_count:   43621
+errors_by_code:  {'E004': 15842, 'E005': 12004, 'E006': 3150, 'E007': 9087, 'E008': 1987, 'E011': 1551}
+```
+
+The `errors_by_code` map gives the exact count per error. One glance
+tells you which rule failed most often.
+
+To do the same from Delta (slower, but works without ClickHouse):
+
+```bash
+docker compose -f docker/compose.yml exec spark-master /opt/spark/bin/spark-submit --master spark://spark-master:7077 --driver-memory 2g --jars /opt/spark/jars/delta-spark_2.12-3.2.0.jar,/opt/spark/jars/delta-storage-3.2.0.jar,/opt/spark/jars/hadoop-aws-3.3.4.jar,/opt/spark/jars/aws-java-sdk-bundle-1.12.262.jar --conf "spark.hadoop.fs.s3a.endpoint=http://minio:9000" --conf "spark.hadoop.fs.s3a.access.key=minioadmin" --conf "spark.hadoop.fs.s3a.secret.key=minioadmin" --conf "spark.hadoop.fs.s3a.path.style.access=true" --conf "spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension" --conf "spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog" -c "spark = __import__('pyspark.sql', fromlist=['SparkSession']).SparkSession.builder.getOrCreate(); from pyspark.sql import functions as F; df = spark.read.format('delta').load('s3a://quarantine/runs/<run-id>/'); df.select(F.explode('error_codes').alias('code')).groupBy('code').count().orderBy('code').show()"
+```
 
 ### Stopping the consumer
 
