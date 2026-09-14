@@ -46,3 +46,4 @@ httpx==0.27.0
 ruff==0.4.10
 black==24.4.2
 mypy==1.10.0
+pytest-spark==0.6.0
