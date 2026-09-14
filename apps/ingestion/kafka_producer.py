@@ -9,19 +9,9 @@ from django.conf import settings
 
 from apps.common.metrics import KAFKA_PUBLISH_ERRORS_TOTAL
 
-
-
-
-
 logger = logging.getLogger(__name__)
 
 _producer: Producer | None = None
-
-
-except KafkaError as e:
-    KAFKA_PUBLISH_ERRORS_TOTAL.inc()
-    logger.exception("Failed to publish validation event for run %s: %s", run_id, e)
-    raise
 
 
 def _get_producer() -> Producer:
@@ -63,11 +53,16 @@ def publish_validation_event(
         "bank_code": bank_code,
         "period": period,
     }
-    producer = _get_producer()
-    producer.produce(
-        topic=settings.KAFKA_TOPIC_UPLOADS,
-        value=json.dumps(payload).encode("utf-8"),
-        callback=_delivery_report,
-    )
-    producer.flush(timeout=10)
-    logger.info("Published validation event for run %s", run_id)
+    try:
+        producer = _get_producer()
+        producer.produce(
+            topic=settings.KAFKA_TOPIC_UPLOADS,
+            value=json.dumps(payload).encode("utf-8"),
+            callback=_delivery_report,
+        )
+        producer.flush(timeout=10)
+        logger.info("Published validation event for run %s", run_id)
+    except Exception as e:  # noqa: BLE001
+        KAFKA_PUBLISH_ERRORS_TOTAL.inc()
+        logger.exception("Failed to publish validation event for run %s: %s", run_id, e)
+        raise

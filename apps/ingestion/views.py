@@ -49,7 +49,18 @@ from .services import run_validation_async, run_validation_sync
         ),
         # The request is multipart because of the file field. Swagger UI
         # renders this as a file picker.
-        request={"multipart/form-data": UploadSerializer},
+        request={
+        "multipart/form-data": {
+            "type": "object",
+            "properties": {
+                "file": {
+                    "type": "string",
+                    "format": "binary",
+                },
+            },
+            "required": ["file"],
+            },
+        },
         # Two success shapes depending on which path is taken. We declare
         # both so the spec is honest about the 201 vs 202 contract.
         responses={
