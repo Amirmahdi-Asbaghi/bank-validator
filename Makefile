@@ -96,6 +96,24 @@ submit-batch:
 	  /opt/spark-jobs/batch_validator.py \
 	  --run-id $(RUN_ID) --source $(SOURCE)
 
+
+# Generate the 51 MB test file for the async path
+big-file:
+	$(COMPOSE) exec web python /app/scripts/generate_big_file.py --target-mb 51 --out /app/data/samples/big_51mb.csv
+
+# Read a Delta table from MinIO with Spark
+# Usage: make show-delta RUN_ID=<uuid> [BUCKET=curated|quarantine] [ERROR_CODE=E007]
+show-delta:
+	@if [ -z "$(RUN_ID)" ]; then \
+	  echo "Usage: make show-delta RUN_ID=<uuid> [BUCKET=curated|quarantine] [ERROR_CODE=E007]"; \
+	  exit 1; \
+	fi
+	$(COMPOSE) exec spark-master /opt/spark/bin/spark-submit \
+	  --master spark://spark-master:7077 \
+	  --driver-memory 2g \
+	  --jars /opt/spark/jars/delta-spark_2.12-3.2.0.jar,/opt/spark/jars/delta-storage-3.2.0.jar,/opt/spark/jars/hadoop-aws-3.3.4.jar,/opt/spark/jars/aws-java-sdk-bundle-1.12.262.jar \
+	  /opt/spark-jobs/show_delta.py \
+	  $(or $(BUCKET),curated) $(RUN_ID) $(ERROR_CODE)
 # ---------- Demo ----------
 demo: up
 	@echo ""
