@@ -255,26 +255,73 @@ Full test guide: [`tests/README.md`](tests/README.md)
 
 ---
 
-## Performance test
+## The two paths
 
-Generate a synthetic file just over the async threshold:
+Small files (< 50 MB) validate **synchronously** in the API process —
+no setup needed. Large files go through an **asynchronous** path:
+MinIO → Kafka → Spark → Delta → ClickHouse.
+
+The async path only processes events **while the Spark streaming
+consumer is running**. It's a long-running job, not a service started
+automatically by `make up`.
+
+### Running the sync path
+
+Nothing to do. Just upload a file:
 
 ```bash
-make big-file
-```
-
-This creates `data/samples/big_51mb.csv` (~51 MB, ~920k rows, ~5% errors).
-Then upload it via Swagger UI or:
-
-```bash
-curl -X POST -F "file=@data/samples/big_51mb.csv" \
+curl -X POST -F "file=@data/samples/valid_small.csv" \
   http://localhost:8000/api/v1/validation
 ```
 
-While it processes, you can watch:
+Returns **HTTP 201** with the full summary in under a second.
 
-- The **Spark streaming window** for `[streaming] run <id>: valid=X invalid=Y`
-- The **Spark Master UI** (http://localhost:8080) for running jobs
+### Running the async path
+
+Two steps.
+
+**1. Start the streaming consumer** (in one terminal, leave it open):
+
+```bash
+make streaming
+```
+
+Wait for this line — it's the "ready" signal:
+
+```
+WARN ResolveWriteToStream: spark.sql.adaptive.enabled is not supported
+```
+
+The consumer is now subscribed to the `bank-uploads` Kafka topic.
+
+**2. Upload a large file** (in another terminal):
+
+```bash
+make big-file
+curl.exe -X POST -F "file=@data/samples/big_51mb.csv" \
+  http://localhost:8000/api/v1/validation
+```
+
+Returns **HTTP 202** with `status: queued` and a `run_id`. The upload
+is accepted but not yet processed.
+
+**3. Watch the streaming terminal**
+
+Within ~40–90 seconds you'll see:
+
+```
+[streaming] processing run_id=<uuid> source=s3://raw/uploads/....csv
+[streaming] run <uuid>: valid=876467 invalid=43621
+[streaming] ClickHouse summary written for <uuid>
+```
+
+**4. Verify the result**
+
+```bash
+docker exec bankval-clickhouse clickhouse-client \
+  --query "SELECT run_id, total_records, valid_count, invalid_count \
+           FROM bankval.validation_summary ORDER BY created_at DESC LIMIT 1"
+```
 
 ### Measured results
 
@@ -288,7 +335,10 @@ While it processes, you can watch:
 | Spark end-to-end processing | **~76 seconds** |
 | Throughput (1 worker, 2 cores) | **~12,100 rows/sec** |
 
-To read the records back from Delta:
+### Reading the records back
+
+The async path writes records to Delta on MinIO, not to Postgres. To
+inspect them:
 
 ```bash
 make show-delta RUN_ID=<run-id> BUCKET=curated
@@ -296,34 +346,13 @@ make show-delta RUN_ID=<run-id> BUCKET=quarantine
 make show-delta RUN_ID=<run-id> BUCKET=quarantine ERROR_CODE=E007
 ```
 
----
+Each command prints the row count, columns, and the first 20 rows.
 
-## The distributed path
+### Stopping the consumer
 
-Small files (`< 50 MB` by default) validate synchronously in the API process.
-
-Larger files take the async path:
-
-1. Django saves the file to MinIO under `s3://raw/uploads/<uuid>.csv`
-2. Publishes an event to the Kafka topic `bank-uploads`
-3. Returns **202 Accepted** with the run ID and `status: queued`
-4. Spark Structured Streaming consumes the event, applies the same rules
-   (implemented as column expressions with `DecimalType(18,2)`)
-5. Writes valid rows to `s3://curated/runs/<run_id>/` (Delta)
-6. Writes invalid rows to `s3://quarantine/runs/<run_id>/` (Delta)
-7. Inserts a summary into `bankval.validation_summary` (ClickHouse)
-
-The client polls `GET /api/v1/validation/{run_id}` until `status` is
-`completed` or `failed`. The response merges Postgres (metadata) with
-ClickHouse (summary counts).
-
-Toggle the threshold via `.env`:
-
-```env
-SMALL_FILE_THRESHOLD=52428800   # 50 MB
-```
-
-Set it to `10` to force the async path for any file (useful for local testing).
+In the streaming terminal, press **Ctrl+C**. Kafka offsets are
+checkpointed on S3, so restarting resumes from where it left off — no
+reprocessing, no missed events.
 
 ---
 
@@ -378,6 +407,7 @@ Common Makefile targets:
 | `make logs SERVICE=web` | Tail a service's logs |
 | `make demo` | Full end-to-end demo |
 | `make big-file` | Generate the 51 MB test file |
+| `make streaming` | Run the Spark streaming consumer (async path) |
 | `make show-delta RUN_ID=... BUCKET=curated` | Read Delta records with Spark |
 | `make submit-batch RUN_ID=... SOURCE=...` | Manually re-run the Spark batch validator |
 
