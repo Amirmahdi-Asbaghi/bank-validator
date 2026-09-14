@@ -26,6 +26,8 @@ def build_session(app_name: str = "bankval") -> SparkSession:
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
         .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
         .config("spark.sql.parquet.compression.codec", "snappy")
+        .config("spark.driver.host", os.environ.get("SPARK_DRIVER_HOST", "spark-master"))
+        .config("spark.driver.bindAddress", "0.0.0.0")
         .config("spark.ui.reverseProxy", "true")
         .config("spark.ui.reverseProxyUrl", "http://localhost:8080")
         .getOrCreate()

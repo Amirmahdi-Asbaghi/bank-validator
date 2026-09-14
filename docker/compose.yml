@@ -127,6 +127,7 @@ services:
       dockerfile: docker/Dockerfile.spark
     image: bankval-spark:dev
     container_name: bankval-spark-master
+    hostname: spark-master
     restart: unless-stopped
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
     ports:
@@ -142,6 +143,7 @@ services:
   spark-worker:
     image: bankval-spark:dev
     container_name: bankval-spark-worker
+    hostname: spark-worker
     restart: unless-stopped
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
     environment:

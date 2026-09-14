@@ -294,6 +294,20 @@ tests/
 
 ---
 
+
+## Spark UI access
+
+The Spark Master UI is at http://localhost:8080. To open the **Application UI**
+(Jobs, Stages, Executors), add one line to your hosts file:
+
+  Windows: C:\Windows\System32\drivers\etc\hosts
+  macOS/Linux: /etc/hosts
+
+  127.0.0.1    spark-master
+
+This lets the browser resolve the container's internal hostname. It's a
+one-time setup per machine.
+
 ## Design decisions worth reading
 
 Short versions of the ADRs in [`docs/decisions.md`](docs/decisions.md):
