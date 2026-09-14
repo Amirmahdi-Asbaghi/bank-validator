@@ -29,6 +29,30 @@ HEADER = [
 
 VALID_BANK_CODES = ["010", "020", "030"]
 VALID_CURRENCIES = ["IRR", "USD", "EUR", "GBP", "AED"]
+# How many decimal places each currency supports.
+# IRR and JPY: whole units only (no fractional rial or yen).
+# KWD, BHD, OMR: 3 decimals (fils).
+# Everything else: 2 decimals (cents).
+CURRENCY_DECIMALS = {
+    "IRR": 0,
+    "JPY": 0,
+    "KWD": 3,
+    "BHD": 3,
+    "OMR": 3,
+    "USD": 2,
+    "EUR": 2,
+    "GBP": 2,
+    "AED": 2,
+    "SAR": 2,
+    "CNY": 2,
+    "CHF": 2,
+    "CAD": 2,
+    "AUD": 2,
+    "INR": 2,
+    "TRY": 2,
+    "RUB": 2,
+    "QAR": 2,
+}
 
 # Rough mix (sums to 1.0)
 MIX = {
@@ -53,39 +77,56 @@ def pick_error() -> str:
 
 
 def make_row(record_id: str) -> list[str]:
+    """Build one row. Amounts are rounded according to the currency's
+    minor unit — IRR and JPY have no fractional part, KWD has 3 decimals,
+    most others have 2.
+    """
     kind = pick_error()
 
     bank_code = random.choice(VALID_BANK_CODES)
     period = f"1405/{random.randint(1, 12):02d}"
     account_code = f"A{random.randint(1, 999_999):06d}"
-    debit = round(random.uniform(10, 10_000), 2)
-    credit = round(random.uniform(0, debit), 2)
-    balance = round(debit - credit, 2)
+
+    # Pick the currency first so we know how to round the amounts.
     currency = random.choice(VALID_CURRENCIES)
+
+    # Minor-unit map: how many decimal places each currency supports.
+    # IRR and JPY have 0 (whole units only).
+    # KWD, BHD, OMR have 3 (fils).
+    # Everything else has 2 (cents).
+    decimals = CURRENCY_DECIMALS.get(currency, 2)
+
+    def money(value: float) -> str:
+        """Format a value with the currency's decimal places."""
+        return f"{round(value, decimals):.{decimals}f}"
+
+    debit = random.uniform(10, 10_000)
+    credit = random.uniform(0, debit)
+    balance = debit - credit
 
     if kind == "E004":
         bank_code = random.choice(["999", "998", "997", "XYZ"])
     elif kind == "E005":
         period = random.choice(["1405-03", "1405/13", "1405/00", "ABCD/EF", "1405/3"])
     elif kind == "E007":
-        balance = round(balance + random.uniform(1, 100), 2)
+        balance = balance + random.uniform(1, 100)
     elif kind == "E008":
         debit = -abs(debit)
-        balance = round(debit - credit, 2)
+        balance = debit - credit
     elif kind == "E011":
         currency = random.choice(["XYZ", "ABC", "US", ""])
+        decimals = 2  # fallback for invalid currency
 
     return [
         bank_code,
         period,
         account_code,
-        f"{debit:.2f}",
-        f"{credit:.2f}",
-        f"{balance:.2f}",
+        money(debit),
+        money(credit),
+        money(balance),
         currency,
         record_id,
     ]
-
 
 def main() -> int:
     parser = argparse.ArgumentParser()

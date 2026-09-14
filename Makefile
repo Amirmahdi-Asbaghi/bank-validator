@@ -159,10 +159,6 @@ kafka-topics:
 # ---------- Spark jobs ----------
 
 submit-batch:
-	@if [ -z "$(RUN_ID)" ] || [ -z "$(SOURCE)" ]; then \
-	  echo "Usage: make submit-batch RUN_ID=<uuid> SOURCE=s3://raw/uploads/<file>"; \
-	  exit 1; \
-	fi
 	$(COMPOSE) exec spark-master /opt/spark/bin/spark-submit \
 	  --master spark://spark-master:7077 \
 	  --driver-memory 2g --executor-memory 1g \
@@ -175,10 +171,6 @@ big-file:
 	  --target-mb 51 --out /app/data/samples/big_51mb.csv
 
 show-delta:
-	@if [ -z "$(RUN_ID)" ]; then \
-	  echo "Usage: make show-delta RUN_ID=<uuid> [BUCKET=curated|quarantine] [ERROR_CODE=E007]"; \
-	  exit 1; \
-	fi
 	$(COMPOSE) exec spark-master /opt/spark/bin/spark-submit \
 	  --master spark://spark-master:7077 \
 	  --driver-memory 2g \
