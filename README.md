@@ -13,6 +13,8 @@ Runs end-to-end on Docker Compose. Every container maps 1:1 to Kubernetes.
 **Tested at scale:** 51 MB / 920,088 records processed end-to-end in ~76
 seconds on a single Spark worker — ~12,100 records/sec.
 
+**Tested by code:** 68 automated tests pass in ~8 seconds.
+
 ---
 
 ## Highlights
@@ -29,6 +31,8 @@ seconds on a single Spark worker — ~12,100 records/sec.
   replayable.
 - **Observable** — business-level counters in Prometheus, dashboards in
   Grafana, DAGs in Airflow.
+- **Tested** — 68 tests covering rules, parsers, serializers, services,
+  API endpoints, and Prometheus metrics.
 
 ---
 
@@ -80,6 +84,7 @@ Full detail: [`docs/architecture.md`](docs/architecture.md)
 | Analytical DB | ClickHouse 24.8 | Per-run summaries |
 | Orchestration | Apache Airflow 2.9 | Scheduled health + backfill |
 | Observability | Prometheus + Grafana | Business metrics |
+| Testing | pytest + pytest-django | Unit + API tests |
 | Packaging | Docker Compose | Local dev |
 
 ---
@@ -216,6 +221,40 @@ Full API reference: [`docs/api.md`](docs/api.md)
 
 ---
 
+## Tests
+
+```bash
+make test
+```
+
+**68 tests, all passing in ~8 seconds.** They cover the full sync path —
+rule engine, parser, serializer, service layer, HTTP endpoints, and
+Prometheus metrics.
+
+### What's tested
+
+| Area | Tests | File |
+|---|---|---|
+| Rule engine (E001–E011) | 19 | `tests/unit/test_rules.py` |
+| File parser (CSV / JSON) | 14 | `tests/unit/test_parsers.py` |
+| Upload serializer | 8 | `tests/unit/test_serializers.py` |
+| Service layer (sync path) | 9 | `tests/unit/test_services.py` |
+| API endpoints (upload + reads) | 7 | `tests/api/test_validation_api.py` |
+| Prometheus metrics | 7 | `tests/api/test_metrics_api.py` |
+
+### What's not tested (and why)
+
+| Gap | Reason |
+|---|---|
+| Spark rule engine | Needs a JVM; runs in a different container |
+| Kafka producer | External dependency |
+| MinIO, ClickHouse clients | External services |
+| End-to-end async path | Kafka + Spark + Delta + ClickHouse all required |
+
+Full test guide: [`tests/README.md`](tests/README.md)
+
+---
+
 ## Performance test
 
 Generate a synthetic file just over the async threshold:
@@ -322,24 +361,6 @@ Full catalogue: [`docs/rules.md`](docs/rules.md)
 
 ---
 
-## Tests
-
-```bash
-make test
-```
-
-Covers:
-
-- One unit test per error code (15 tests)
-- Batch summary aggregation
-- API: valid upload, invalid upload, missing file
-
-```
-18 passed in ~4s
-```
-
----
-
 ## Operations
 
 Common Makefile targets:
@@ -402,8 +423,15 @@ data/
 └── samples/               Small fixtures + expected outputs
 
 tests/
-├── unit/test_rules.py
-└── api/test_validation_api.py
+├── conftest.py            Shared fixtures
+├── unit/
+│   ├── test_rules.py      19 tests, one per error code
+│   ├── test_parsers.py    14 tests, CSV/JSON parsing
+│   ├── test_serializers.py 8 tests, upload validation
+│   └── test_services.py   9 tests, sync path end-to-end
+└── api/
+    ├── test_validation_api.py 7 tests, HTTP endpoints
+    └── test_metrics_api.py    7 tests, Prometheus counters
 ```
 
 ---
@@ -434,6 +462,8 @@ Short versions of the ADRs in [`docs/decisions.md`](docs/decisions.md):
   but not populated. Doesn't affect correctness.
 - **No authentication** — the API is open. Fine for a portfolio project;
   production would add DRF token or JWT auth.
+- **No Spark rule tests** — they require a JVM, which the `web` container
+  doesn't have. The pandas engine has full test coverage.
 
 ---
 
