@@ -316,9 +316,8 @@ Within ~40–90 seconds you'll see:
 **4. Verify the result**
 
 ```bash
-docker exec bankval-clickhouse clickhouse-client \
-  --query "SELECT run_id, total_records, valid_count, invalid_count \
-           FROM bankval.validation_summary ORDER BY created_at DESC LIMIT 1"
+
+docker exec bankval-clickhouse clickhouse-client --query "SELECT run_id, total_records, valid_count, invalid_count FROM bankval.validation_summary ORDER BY created_at DESC LIMIT 1"
 ```
 
 ### Measured results
