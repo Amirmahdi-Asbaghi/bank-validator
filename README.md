@@ -2,29 +2,33 @@
 
 A distributed validation pipeline for bank reporting files.
 
-Upload a CSV or JSON file of accounting records. Every record is checked against
-a rule set (structure, types, bank allow-list, period format, duplicates,
-`balance = debit − credit`). Valid records land in a curated Delta table.
-Invalid records go to quarantine with their error codes. A summary is written
-to ClickHouse for fast analytics.
+Upload a CSV or JSON file of accounting records. Every record is checked
+against a rule set (structure, types, bank allow-list, period format,
+duplicates, `balance = debit − credit`). Valid records land in a curated
+Delta table. Invalid records go to quarantine with their error codes. A
+per-run summary lands in ClickHouse for fast analytics.
 
 Runs end-to-end on Docker Compose. Every container maps 1:1 to Kubernetes.
+
+**Tested at scale:** 51 MB / 920,088 records processed end-to-end in ~76
+seconds on a single Spark worker — ~12,100 records/sec.
 
 ---
 
 ## Highlights
 
-- **Two engines, one semantics** — small files run in pandas; large files run
-  on Spark. Same error codes, same results.
-- **Never lose data** — invalid records persist with their reasons and the
-  original row.
+- **Two engines, one semantics** — small files run in pandas; large files
+  run on Spark. Same error codes (E001–E011), same results.
+- **Never lose data** — invalid records persist in Delta with their
+  reasons and the original row.
 - **Money is `Decimal`** — exact equality for `balance = debit − credit`,
   never float.
-- **Event-driven ingestion** — Django returns in milliseconds; Spark processes
-  asynchronously via Kafka.
-- **ACID + idempotent** — Delta Lake sinks, per-`run_id` writes, replayable.
-- **Observable** — business-level counters in Prometheus, dashboards in Grafana,
-  DAGs in Airflow.
+- **Event-driven ingestion** — Django returns in under a second; Spark
+  processes asynchronously via Kafka.
+- **ACID + idempotent** — Delta Lake sinks, per-`run_id` writes,
+  replayable.
+- **Observable** — business-level counters in Prometheus, dashboards in
+  Grafana, DAGs in Airflow.
 
 ---
 
@@ -48,14 +52,13 @@ Upload  →  Django + DRF  →  MinIO (raw)
                  │      curated Delta    quarantine Delta
                  │      (valid)          (+ error_codes, raw_row)
                  │           │                 │
-                 └───────────┴────────┬────────┘
-                                      ▼
-                              ClickHouse gold
-                              (per-run summary)
-
-Airflow       —  scheduled health checks + manual backfill
-Prometheus    —  business metrics
-Grafana       —  dashboards
+                 │           ▼                 ▼
+                 │      MinIO (S3)        MinIO (S3)
+                 │
+                 └────────────────┬────────────┐
+                                  ▼            ▼
+                            Postgres      ClickHouse
+                            (ledger)      (summary)
 ```
 
 Full detail: [`docs/architecture.md`](docs/architecture.md)
@@ -64,53 +67,102 @@ Full detail: [`docs/architecture.md`](docs/architecture.md)
 
 ## Stack
 
-| Layer | Technology |
-|---|---|
-| API | Django 5 + DRF + drf-spectacular |
-| Async (small) | Celery + Redis |
-| Sync compute | pandas + `decimal.Decimal` |
-| Distributed compute | Apache Spark 3.5 (PySpark) |
-| Event bus | Apache Kafka 4 (KRaft mode) |
-| Object storage | MinIO (S3 API) |
-| Table format | Delta Lake 3.2 |
-| Operational DB | PostgreSQL 16 |
-| Analytical DB | ClickHouse 24.8 |
-| Orchestration | Apache Airflow 2.9 |
-| Observability | Prometheus + Grafana |
-| Packaging | Docker Compose |
+| Layer | Technology | Role |
+|---|---|---|
+| API | Django 5 + DRF | Ingestion + serving |
+| Async (small) | Celery + Redis | Small-file async fallback |
+| Sync compute | pandas + `decimal.Decimal` | In-process validation |
+| Distributed compute | Apache Spark 3.5 (PySpark) | Large-file validation |
+| Event bus | Apache Kafka 4 (KRaft) | Decoupled ingestion |
+| Object storage | MinIO (S3 API) | Raw files + Delta tables |
+| Table format | Delta Lake 3.2 | ACID records store |
+| Operational DB | PostgreSQL 16 | Run ledger |
+| Analytical DB | ClickHouse 24.8 | Per-run summaries |
+| Orchestration | Apache Airflow 2.9 | Scheduled health + backfill |
+| Observability | Prometheus + Grafana | Business metrics |
+| Packaging | Docker Compose | Local dev |
+
+---
+
+## Data flow — where results live
+
+For **every** upload, three outputs are produced. Where they land depends on
+the file size.
+
+### Small file (< 50 MB, default)
+
+1. Django receives the file
+2. Runs the pandas rule engine in-process
+3. Writes results directly to Postgres:
+   - `validation_validationrun` — one row per run
+   - `validation_validrecord` — valid records
+   - `validation_invalidrecord` — invalid records with error codes
+4. Returns **HTTP 201** with the full summary
+
+All four read endpoints (`.`, `/summary`, `/valid`, `/invalid`) serve from
+Postgres.
+
+### Large file (≥ 50 MB)
+
+1. Django saves the raw file to MinIO: `s3://raw/uploads/<uuid>.csv`
+2. Django writes a `queued` run to Postgres
+3. Django publishes a small event to Kafka topic `bank-uploads`
+4. Returns **HTTP 202** with the run_id — takes under a second
+5. Spark Structured Streaming consumes the event:
+   - Reads the raw file from MinIO
+   - Applies the same rules as column expressions
+   - Writes **valid records** → `s3://curated/runs/<run_id>/` (Delta)
+   - Writes **invalid records** → `s3://quarantine/runs/<run_id>/` (Delta)
+   - Inserts a **summary row** → ClickHouse `bankval.validation_summary`
+
+For large files:
+- `/summary` and `/validation/{id}` return ClickHouse data (fallback from Postgres)
+- `/valid` and `/invalid` are empty via the API — the records live in Delta
+  on MinIO, queryable with Spark
+
+### Where to look for what
+
+| Question | Store | Location |
+|---|---|---|
+| Did the upload succeed? | Postgres | `validation_validationrun.status` |
+| What were the counts? | ClickHouse | `bankval.validation_summary` |
+| Raw file bytes? | MinIO | `s3://raw/uploads/<uuid>.csv` |
+| Valid records? | MinIO (Delta) | `s3://curated/runs/<run_id>/` |
+| Invalid records? | MinIO (Delta) | `s3://quarantine/runs/<run_id>/` |
 
 ---
 
 ## Quickstart
 
-Requirements: **Docker Desktop** (or Docker Engine + Compose), **Make**, **Git**.
+Requirements: **Docker Desktop**, **Make**, **Git**.
 
 ```bash
-git clone <your-repo-url> bank-validator
+git clone https://github.com/Amirmahdi-Asbaghi/bank-validator.git
 cd bank-validator
 
-# First-time setup: create .env, then bring the stack up
 cp .env.example .env
 cp .env docker/.env
 
-# Bring up + migrate + seed + run a sample upload
 make demo
 ```
 
-After `make demo` completes, open:
+`make demo` brings the stack up, applies migrations, seeds the bank
+reference data, and uploads two sample files.
+
+### After `make demo`
 
 | Service | URL | Credentials |
 |---|---|---|
 | Django API | http://localhost:8000 | — |
-| Swagger | http://localhost:8000/api/schema/swagger/ | — |
-| Django Admin | http://localhost:8000/admin | superuser (see below) |
+| Swagger UI | http://localhost:8000/api/schema/swagger/ | — |
+| Django Admin | http://localhost:8000/admin | create superuser below |
 | MinIO console | http://localhost:9001 | `minioadmin` / `minioadmin` |
 | Spark master UI | http://localhost:8080 | — |
 | Airflow | http://localhost:8081 | `airflow` / `airflow` |
 | Prometheus | http://localhost:9090 | — |
 | Grafana | http://localhost:3000 | `admin` / `admin` |
 
-Create a Django superuser (for the admin panel):
+Create a Django superuser:
 
 ```bash
 make shell
@@ -160,8 +212,50 @@ curl -X POST -F "file=@data/samples/invalid_small.csv" \
 ```
 
 More sample files: [`data/samples/README.md`](data/samples/README.md)
-
 Full API reference: [`docs/api.md`](docs/api.md)
+
+---
+
+## Performance test
+
+Generate a synthetic file just over the async threshold:
+
+```bash
+make big-file
+```
+
+This creates `data/samples/big_51mb.csv` (~51 MB, ~920k rows, ~5% errors).
+Then upload it via Swagger UI or:
+
+```bash
+curl -X POST -F "file=@data/samples/big_51mb.csv" \
+  http://localhost:8000/api/v1/validation
+```
+
+While it processes, you can watch:
+
+- The **Spark streaming window** for `[streaming] run <id>: valid=X invalid=Y`
+- The **Spark Master UI** (http://localhost:8080) for running jobs
+
+### Measured results
+
+| Metric | Value |
+|---|---|
+| File size | ~52 MB |
+| Total records | **920,088** |
+| Valid records | **876,467** (95.3%) |
+| Invalid records | **43,621** (4.7%) |
+| Upload HTTP response time | **< 1 second** (202 Accepted) |
+| Spark end-to-end processing | **~76 seconds** |
+| Throughput (1 worker, 2 cores) | **~12,100 rows/sec** |
+
+To read the records back from Delta:
+
+```bash
+make show-delta RUN_ID=<run-id> BUCKET=curated
+make show-delta RUN_ID=<run-id> BUCKET=quarantine
+make show-delta RUN_ID=<run-id> BUCKET=quarantine ERROR_CODE=E007
+```
 
 ---
 
@@ -181,15 +275,32 @@ Larger files take the async path:
 7. Inserts a summary into `bankval.validation_summary` (ClickHouse)
 
 The client polls `GET /api/v1/validation/{run_id}` until `status` is
-`completed` or `failed`.
+`completed` or `failed`. The response merges Postgres (metadata) with
+ClickHouse (summary counts).
 
-You can toggle the threshold via `.env`:
+Toggle the threshold via `.env`:
 
 ```env
 SMALL_FILE_THRESHOLD=52428800   # 50 MB
 ```
 
 Set it to `10` to force the async path for any file (useful for local testing).
+
+---
+
+## Why three stores?
+
+Each store handles what it's best at. This is a CQRS-style split.
+
+| Concern | Store | Reason |
+|---|---|---|
+| Transactional run state, point lookups | **Postgres** | ACID, fast by UUID, Django ORM |
+| Bulk files + parquet records | **MinIO (S3)** | Cheap, scales to TB, Spark-native |
+| Analytical aggregates | **ClickHouse** | Columnar, sub-second `GROUP BY` |
+| Stream buffer | **Kafka** | Durable, replayable, decoupled |
+| Distributed compute | **Spark** | Partitions a file across workers |
+
+Putting everything in one store would compromise all three access patterns.
 
 ---
 
@@ -244,8 +355,10 @@ Common Makefile targets:
 | `make test` | Run pytest |
 | `make shell` | Django shell in the web container |
 | `make logs SERVICE=web` | Tail a service's logs |
-| `make submit-batch RUN_ID=<uuid> SOURCE=s3://raw/uploads/<file>` | Run the Spark batch validator on a specific file |
 | `make demo` | Full end-to-end demo |
+| `make big-file` | Generate the 51 MB test file |
+| `make show-delta RUN_ID=... BUCKET=curated` | Read Delta records with Spark |
+| `make submit-batch RUN_ID=... SOURCE=...` | Manually re-run the Spark batch validator |
 
 ---
 
@@ -263,7 +376,8 @@ spark_jobs/
 ├── session.py             SparkSession with Delta + S3A
 ├── rules.py               Column-expression rule engine
 ├── batch_validator.py     Manual spark-submit entry
-└── streaming_validator.py Kafka → Delta streaming consumer
+├── streaming_validator.py Kafka → Delta streaming consumer
+└── show_delta.py          Utility to read Delta tables
 
 airflow/dags/
 ├── health_check_dag.py    Runs every 15 minutes
@@ -294,20 +408,6 @@ tests/
 
 ---
 
-
-## Spark UI access
-
-The Spark Master UI is at http://localhost:8080. To open the **Application UI**
-(Jobs, Stages, Executors), add one line to your hosts file:
-
-  Windows: C:\Windows\System32\drivers\etc\hosts
-  macOS/Linux: /etc/hosts
-
-  127.0.0.1    spark-master
-
-This lets the browser resolve the container's internal hostname. It's a
-one-time setup per machine.
-
 ## Design decisions worth reading
 
 Short versions of the ADRs in [`docs/decisions.md`](docs/decisions.md):
@@ -319,6 +419,21 @@ Short versions of the ADRs in [`docs/decisions.md`](docs/decisions.md):
 - **`Decimal` everywhere money is involved** — floats lose precision.
 - **Boolean rule columns, not chained `array_union`** — avoids Spark codegen explosion (driver OOM).
 - **`foreachBatch` in streaming** — three sinks per micro-batch; per-row doesn't fit.
+
+---
+
+## Known limitations
+
+- **Async record listing** — `/valid` and `/invalid` serve from Postgres.
+  For large files, records live in Delta on MinIO; use Spark or a
+  ClickHouse addition to query them.
+- **Spark UI links** — the Application UI links resolve to the container's
+  internal IP. The Master UI works. In production on Kubernetes this
+  doesn't apply.
+- **`bank_code` / `period` on runs** — designed as denormalized metadata
+  but not populated. Doesn't affect correctness.
+- **No authentication** — the API is open. Fine for a portfolio project;
+  production would add DRF token or JWT auth.
 
 ---
 
