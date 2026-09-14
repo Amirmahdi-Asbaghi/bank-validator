@@ -158,7 +158,6 @@ reference data, and uploads two sample files.
 
 | Service | URL | Credentials |
 |---|---|---|
-| Django API | http://localhost:8000 | — |
 | Swagger UI | http://localhost:8000/api/schema/swagger/ | — |
 | Django Admin | http://localhost:8000/admin | create superuser below |
 | MinIO console | http://localhost:9001 | `minioadmin` / `minioadmin` |
@@ -184,8 +183,8 @@ Upload the sample files and inspect the responses.
 **Valid — 3 rows, no errors:**
 
 ```bash
-curl -X POST -F "file=@data/samples/valid_small.csv" \
-  http://localhost:8000/api/v1/validation
+curl.exe -X POST -F "file=@data/samples/valid_small.csv" "http://localhost:8000/api/v1/validation"
+
 ```
 
 ```json
@@ -298,8 +297,7 @@ The consumer is now subscribed to the `bank-uploads` Kafka topic.
 
 ```bash
 make big-file
-curl.exe -X POST -F "file=@data/samples/big_51mb.csv" \
-  http://localhost:8000/api/v1/validation
+curl.exe -X POST -F "file=@data/samples/big_51mb.csv" "http://localhost:8000/api/v1/validation"
 ```
 
 Returns **HTTP 202** with `status: queued` and a `run_id`. The upload

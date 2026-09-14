@@ -64,8 +64,9 @@ help:
 
 # ---------- Stack management ----------
 
-up:
+up: 
 	$(COMPOSE) up -d
+	$(MAKE) clickhouse-init
 	@echo "Services:"
 	@$(COMPOSE) ps
 
@@ -151,6 +152,10 @@ psql:
 
 clickhouse:
 	$(COMPOSE) exec clickhouse clickhouse-client
+
+clickhouse-init:
+	$(COMPOSE) exec clickhouse clickhouse-client --query "CREATE DATABASE IF NOT EXISTS bankval"
+	$(COMPOSE) exec clickhouse clickhouse-client --query "CREATE TABLE IF NOT EXISTS bankval.validation_summary (run_id UUID, bank_code String, period String, total_records UInt32, valid_count UInt32, invalid_count UInt32, duplicate_count UInt32, errors_by_code Map(String, UInt32), created_at DateTime DEFAULT now(), finished_at Nullable(DateTime)) ENGINE = MergeTree() ORDER BY (bank_code, period, created_at) SETTINGS index_granularity = 8192"
 
 kafka-topics:
 	$(COMPOSE) exec kafka /opt/kafka/bin/kafka-topics.sh \
