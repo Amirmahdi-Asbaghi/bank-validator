@@ -83,6 +83,7 @@ Full detail: [`docs/architecture.md`](docs/architecture.md)
 | Operational DB | PostgreSQL 16 | Run ledger |
 | Analytical DB | ClickHouse 24.8 | Per-run summaries |
 | Orchestration | Apache Airflow 2.9 | Scheduled health + backfill |
+| Orchestration | Apache Airflow 2.9 | Scheduled health + backfill |
 | Observability | Prometheus + Grafana | Business metrics |
 | Testing | pytest + pytest-django | Unit + API tests |
 | Packaging | Docker Compose | Local dev |
@@ -500,6 +501,83 @@ Short versions of the ADRs in [`docs/decisions.md`](docs/decisions.md):
 - **`foreachBatch` in streaming** — three sinks per micro-batch; per-row doesn't fit.
 
 ---
+
+## Observability and orchestration
+
+The pipeline runs three supporting tools — Prometheus, Grafana, and
+Airflow. Each plays a distinct role.
+
+### Prometheus — metrics collector
+
+Prometheus scrapes a `/metrics` endpoint on the Django app every 15
+seconds. The app exposes five business-level counters:
+
+| Metric | What it counts |
+|---|---|
+| `bankval_records_uploaded_total` | Total records received across all runs |
+| `bankval_records_valid_total` | Records that passed every rule |
+| `bankval_records_invalid_total` | Records that failed at least one rule |
+| `bankval_runs_total{path="sync"\|"async_kafka"}` | Runs by execution path |
+| `bankval_kafka_publish_errors_total` | Failed publishes to Kafka |
+
+Prometheus stores these over time. You can query them with PromQL —
+e.g. `rate(bankval_records_invalid_total[5m])` gives the per-second
+rate of invalid records over the last 5 minutes. A spike means a bank
+is sending bad data; a drop to zero means nothing is being processed.
+
+**URL:** http://localhost:9090
+**Config:** [`docker/prometheus/prometheus.yml`](docker/prometheus/prometheus.yml)
+
+### Grafana — dashboards
+
+Grafana connects to Prometheus and draws charts. It doesn't collect or
+store anything itself — it's a viewer. The Prometheus data source is
+pre-configured. Open **Explore**, pick the Prometheus datasource, and
+run a query like `bankval_records_valid_total` to see the current value,
+or `rate(bankval_records_invalid_total[5m])` for a time-series chart.
+
+**URL:** http://localhost:3000 (login `admin` / `admin`)
+**Config:** [`docker/grafana/provisioning/`](docker/grafana/provisioning/)
+
+### Airflow — task scheduler
+
+Airflow runs tasks on a schedule and shows their history. Two DAGs are
+configured:
+
+| DAG | Schedule | What it does |
+|---|---|---|
+| `pipeline_health_check` | Every 15 minutes | Verifies Postgres, MinIO, Kafka, and ClickHouse are reachable |
+| `batch_backfill` | Manual only | Re-runs the Spark batch validator for a specific run |
+
+The health check gives early warning if a service goes down. The
+backfill DAG lets you re-process a failed run without manually
+constructing a `spark-submit` command.
+
+**URL:** http://localhost:8081 (login `airflow` / `airflow`)
+**DAGs:** [`airflow/dags/`](airflow/dags/)
+
+### Spark UI — job progress
+
+Spark has its own built-in UI at http://localhost:8080. It shows the
+running master, registered workers, active jobs, and stage progress.
+For debugging a specific Spark job, this is the first place to look —
+not Prometheus.
+
+### How they fit together
+
+```
+Django  ─►  /metrics  ◄──  Prometheus  ◄──  Grafana (dashboards)
+                              │
+                              └─ scrapes every 15s
+
+Airflow  ─►  runs DAGs every 15 min (health) or on demand (backfill)
+
+Spark    ─►  own UI at :8080 for job-level metrics
+```
+
+Prometheus and Grafana handle ongoing observation. Airflow handles
+scheduled execution. Spark's own UI handles per-job debugging. Each
+tool has a different job; none duplicates another.
 
 ## Known limitations
 
