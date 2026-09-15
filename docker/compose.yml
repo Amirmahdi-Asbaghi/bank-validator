@@ -20,19 +20,6 @@ services:
       timeout: 5s
       retries: 10
 
-  # ---------- Redis (Celery broker) ----------
-  redis:
-    image: redis:7-alpine
-    container_name: bankval-redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
 
     # ---------- MinIO (S3-compatible object storage) ----------
   minio:
@@ -310,37 +297,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
       minio:
         condition: service_healthy
       kafka:
         condition: service_healthy
       clickhouse:
         condition: service_healthy
-
-  # ---------- Celery worker (async tasks) ----------
-  celery:
-    image: bankval-web:dev
-    container_name: bankval-celery
-    restart: unless-stopped
-    command: celery -A config worker --loglevel=info
-    env_file:
-      - ../.env
-    volumes:
-      - ..:/app
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-      clickhouse:
-        condition: service_healthy
-      
 
 volumes:
   postgres_data:

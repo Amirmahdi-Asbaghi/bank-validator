@@ -74,7 +74,7 @@ Full detail: [`docs/architecture.md`](docs/architecture.md)
 | Layer | Technology | Role |
 |---|---|---|
 | API | Django 5 + DRF | Ingestion + serving |
-| Async (small) | Celery + Redis | Small-file async fallback |
+| Async (small) Small-file async fallback |
 | Sync compute | pandas + `decimal.Decimal` | In-process validation |
 | Distributed compute | Apache Spark 3.5 (PySpark) | Large-file validation |
 | Event bus | Apache Kafka 4 (KRaft) | Decoupled ingestion |
@@ -418,7 +418,7 @@ Common Makefile targets:
 | Command | Purpose |
 |---|---|
 | `make up` | Start the full stack |
-| `make up-dev` | Fast iteration — only web + postgres + redis + minio |
+| `make up-dev` | Fast iteration — only web + postgres + minio |
 | `make down` | Stop containers (keep volumes) |
 | `make reset` | Stop and delete volumes (fresh state) |
 | `make migrate` | Apply Django migrations |

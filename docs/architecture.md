@@ -110,7 +110,6 @@ reconciliation. The system must:
 | **Ingestion** | Django + DRF | Receive file, hash, persist to raw zone, route by size |
 | **Sync compute** | pandas rule engine | Validate small files inline |
 | **Async compute** | Kafka + Spark Structured Streaming | Validate large files distributed |
-| **Async (alt)** | Celery + Redis | Out-of-band small-file processing |
 | **Object storage** | MinIO (S3 API) | Raw uploads + Delta tables (curated / quarantine) |
 | **Event bus** | Kafka (KRaft) | Decouple ingestion from distributed compute |
 | **Table format** | Delta Lake | ACID sinks, time travel, MERGE |

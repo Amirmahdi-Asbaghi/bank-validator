@@ -13,9 +13,7 @@ Everything runs on Docker Compose on a single host.
 | Component | Instances | Resources |
 |---|---|---|
 | Django (web) | 1 | 2 cores, 1 GB RAM |
-| Celery worker | 1 | (configured, no tasks) |
 | PostgreSQL | 1 | default |
-| Redis | 1 | default |
 | MinIO | 1 node | default |
 | Kafka | 1 broker (KRaft) | 3 partitions on `bank-uploads` |
 | Spark master | 1 | — |
@@ -177,14 +175,12 @@ query SLA.
 million rows in Postgres is a full table scan. In ClickHouse it's a
 columnar read — 10–100× faster.
 
-### Airflow (Celery or Kubernetes executor)
+### Airflow (Kubernetes executor)
 
 **Current:** LocalExecutor — tasks run in the scheduler's process.
 
 **Scale strategy:**
 
-- **CeleryExecutor** — dedicated worker pool for task execution. The
-  scheduler doesn't run tasks itself.
 - **KubernetesExecutor** — each task runs as a pod, spawning and cleaning
   up per job. Best for variable workloads.
 
@@ -363,7 +359,7 @@ is the cheapest durable store — put everything there and compute from it.
 |---|---|---|
 | Django (stateless) | Postgres (up to a point) | Local file storage |
 | Spark workers | ClickHouse (single-shard) | Single Kafka broker |
-| Kafka partitions | MinIO (single-node) | Local Celery queue |
+| Kafka partitions | MinIO (single-node) | 
 | Airflow workers | | |
 
 The general principle: **stateless components scale out; stateful

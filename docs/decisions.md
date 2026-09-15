@@ -52,43 +52,44 @@ Both produce the same error codes (E001–E011) with identical semantics.
 
 ---
 
-## ADR-002 — Kafka for large files, Celery for small
+## ADR-002 — Kafka for the async path
 
 **Status:** Accepted
 
 **Context**
 
-Both async paths (Kafka, Celery) could work for any file. The question
-is which to use, or whether to use one for everything.
+Files larger than the sync threshold need to be validated without
+blocking the API. Two candidates: Celery (task queue backed by Redis)
+or Kafka (event log consumed by Spark).
 
 **Decision**
 
-- **Small files** (< 50 MB) → sync path, pandas, in-process.
-- **Large files** (≥ 50 MB) → Kafka → Spark Streaming.
-- **Celery** is configured but not currently used as a task path.
+Kafka + Spark Structured Streaming. Celery was evaluated early on
+but removed — the workload doesn't fit a task-queue model.
 
 **Consequences**
 
 *Positive:*
-- Spark's ~10s startup is only paid for files large enough to benefit.
-- Kafka decouples ingestion from processing; replayable; durable.
-- Different tools for different workloads.
+- **Durability.** Kafka persists events to disk; a broker restart doesn't lose pending work. Redis without persistence would.
+- **Replayability.** Offsets let us re-consume events. Kafka's log is a source of truth. Celery tasks are consumed once and forgotten.
+- **Distributed compute.** Spark partitions the file across workers. Celery workers process one task each — a single large file can't be parallelized.
+- **Consistency.** One async mechanism instead of two.
 
 *Negative:*
-- Two async mechanisms means more infrastructure (Kafka + Celery + Redis).
-- Celery is currently unused — a source of confusion.
+- **More infrastructure.** Kafka + Spark is heavier than Celery + Redis. Two services instead of two, but Kafka is a bigger install.
+- **Higher latency for small async jobs.** A Celery task for a 5 MB file would finish in seconds. Going through Kafka + Spark takes ~30 seconds of Spark startup.
 
 *Mitigation:*
-- Document the Celery setup as "available but not active" in the
-  architecture diagram.
-- Remove Celery if it stays unused past a certain point.
+- The threshold routing (files under 50 MB go through pandas synchronously) means the "small async" case doesn't occur in practice.
+- If a future use case needs fast async for small files, Celery can be reintroduced as a separate path.
 
 **Alternatives considered**
-- **Kafka for everything:** overhead for small files is unjustified.
-- **Celery for everything:** can't distribute a single large file.
-- **No async at all:** blocks the API on large uploads.
+- **Celery + Redis:** simpler, but no replayability, no partition-parallelism, and one task can't span multiple workers.
+- **RabbitMQ + custom consumers:** similar durability to Kafka but a smaller ecosystem for the Spark side.
+- **Direct Spark call from Django:** couples the API to Spark's availability. A Spark outage would break uploads.
 
----
+**Removal note:** the original implementation included Redis and Celery. They were removed once the pipeline standardized on Kafka — the code and containers were dead weight.
+
 
 ## ADR-003 — Delta Lake for curated and quarantine
 

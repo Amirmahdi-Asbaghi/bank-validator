@@ -74,9 +74,10 @@ up:
 	@$(COMPOSE) ps
 
 up-dev:
-	$(COMPOSE) up -d postgres redis minio minio-init
+	up-dev:
+	$(COMPOSE) up -d postgres minio minio-init
 	$(COMPOSE) up -d --force-recreate web
-	@echo "Dev stack up (web + postgres + redis + minio)."
+	@echo "Dev stack up (web + postgres + minio)."
 	@echo "Django: http://localhost:8000"
 	@echo "MinIO console: http://localhost:9001 (minioadmin / minioadmin)"
 

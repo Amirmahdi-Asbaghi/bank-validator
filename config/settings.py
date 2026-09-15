@@ -17,7 +17,6 @@ Grouping:
     Auth            password validators
     i18n            language and timezone
     Static          STATIC_URL
-    Celery          broker, backend, serializers
     DRF             parsers, renderers, schema
     Storage         MinIO (S3), ClickHouse, Kafka
     App constants   SMALL_FILE_THRESHOLD, MEDIA_*
@@ -203,25 +202,6 @@ STATIC_URL = "static/"
 # BigAutoField uses 64-bit integers, avoiding overflow on large tables.
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# ---------- Celery ----------
-
-# Celery is the async task queue. In this project it's available but
-# not currently used — the async path goes through Kafka instead.
-# It's configured so future small-file async work has a home.
-CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://redis:6379/0")
-CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="redis://redis:6379/0")
-
-# Restrict to JSON. The default pickle serializer is unsafe — a
-# malicious broker could send a crafted pickle that executes code.
-CELERY_ACCEPT_CONTENT = ["json"]
-CELERY_TASK_SERIALIZER = "json"
-CELERY_RESULT_SERIALIZER = "json"
-
-CELERY_TIMEZONE = "UTC"
-
-# Silences a deprecation warning from Celery 5.4 — the setting will be
-# the default in Celery 6.0, but is required now to avoid the warning.
-CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 
 # ---------- Django REST Framework ----------
 
