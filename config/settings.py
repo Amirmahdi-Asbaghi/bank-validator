@@ -41,7 +41,10 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 
     # rest_framework
-    'rest_framework'
+    'rest_framework',
+    # bank_validator
+    'bank_validator',
+
 ]
 
 REST_FRAMEWORK = {
@@ -90,6 +93,7 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'db.sqlite3',
+        'ATOMIC_REQUESTS': True,
     }
 }
 
