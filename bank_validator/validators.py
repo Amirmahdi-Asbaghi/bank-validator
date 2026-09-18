@@ -1,13 +1,15 @@
 import re
 
 from persiantools.jdatetime import JalaliDate
+
+import pandas as pd
 # jalali_now = JalaliDate.today()
 
 REQUIRED_FIELDS = ["bank_code", "period", "account_code", "debit", "credit", "balance"]
 STRING_FIELDS = ["bank_code", "period", "account_code"]
 NUMERIC_FIELDS = ["debit", "credit", "balance"]
 PERIOD_PATTERN = re.compile(r"\d{4}/\d{2}") # YYYY/MM
-ALLOWED_BANK_CODES = ["101", "202", "303", "404T", "505"]
+ALLOWED_BANK_CODES = ["101", "002", "305", "112", "310"]
 
 
 def check_required_fields(record):
@@ -97,6 +99,31 @@ def validate_record(record, jalali_now):
             errors.append(result)
 
     return errors
+
+
+def validate_dataframe(df):
+    jalali_now = JalaliDate.today()
+
+    errors_column = []
+
+    for _, row in df.iterrows():  # _ -> index that we don't want
+        record = row.to_dict()
+        # converting NaN from pandas to None (python)
+        for key in record:
+            if pd.isna(record[key]):
+                record[key] = None
+
+        errors_column.append(validate_record(record, jalali_now))
+
+    df["errors"] = errors_column
+
+    valid_column = []
+    for codes in df["errors"]:
+        valid_column.append(len(codes) == 0)
+    df["valid"] = valid_column
+
+    return df
+
 
 
 # helper function

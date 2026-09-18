@@ -9,9 +9,11 @@ from bank_validator.validators import (
     check_period,
     check_balance_consistency,
     validate_record,
-    ALLOWED_BANK_CODES
+    ALLOWED_BANK_CODES,
+    validate_dataframe,
 )
-
+from persiantools.jdatetime import JalaliDate
+import pandas as pd
 
 def _valid_record():
     return {
@@ -210,66 +212,205 @@ class CheckBankCodeTests(TestCase):
         self.assertEqual(check_bank_code(record), "E004")
 
 
-class CheckBalanceConsistencyTests(TestCase):
+class CheckPeriodTests(TestCase):
 
-    def test_balanced_record(self):
+    jalali_now = JalaliDate.today()
+
+    def test_valid_period_current_month(self):
         record = _valid_record()
-        self.assertIsNone(check_balance_consistency(record))
+        record["period"] = "1405/06"
+        self.assertIsNone(check_period(record, self.jalali_now))
 
-    def test_balance_mismatch(self):
+    def test_valid_period_past_same_year(self):
         record = _valid_record()
-        record["balance"] = 999
-        self.assertEqual(check_balance_consistency(record), "E006")
+        record["period"] = "1405/03"
+        self.assertIsNone(check_period(record, self.jalali_now))
 
-    def test_missing_debit_is_skipped(self):
+    def test_valid_period_past_year(self):
+        record = _valid_record()
+        record["period"] = "1404/12"
+        self.assertIsNone(check_period(record, self.jalali_now))
+
+    def test_bad_format_short_month(self):
+        record = _valid_record()
+        record["period"] = "1405/6"
+        self.assertEqual(check_period(record, self.jalali_now), "E005")
+
+    def test_bad_format_dash(self):
+        record = _valid_record()
+        record["period"] = "1405-06"
+        self.assertEqual(check_period(record, self.jalali_now), "E005")
+
+    def test_bad_format_letters(self):
+        record = _valid_record()
+        record["period"] = "abcd/ef"
+        self.assertEqual(check_period(record, self.jalali_now), "E005")
+
+    def test_bad_format_extra_text(self):
+        record = _valid_record()
+        record["period"] = "1405/06abc"
+        self.assertEqual(check_period(record, self.jalali_now), "E005")
+
+    def test_future_year(self):
+        record = _valid_record()
+        record["period"] = "1500/01"
+        self.assertEqual(check_period(record, self.jalali_now), "E005")
+
+    def test_future_month_same_year(self):
+        record = _valid_record()
+        record["period"] = "1405/07"
+        self.assertEqual(check_period(record, self.jalali_now), "E005")
+
+    def test_too_old(self):
+        record = _valid_record()
+        record["period"] = "1309/12"
+        self.assertEqual(check_period(record, self.jalali_now), "E005")
+
+    def test_missing_key_is_skipped(self):
+        record = _valid_record()
+        del record["period"]
+        self.assertIsNone(check_period(record, self.jalali_now))
+
+    def test_none_value_is_skipped(self):
+        record = _valid_record()
+        record["period"] = None
+        self.assertIsNone(check_period(record, self.jalali_now))
+
+    def test_empty_string_is_skipped(self):
+        record = _valid_record()
+        record["period"] = ""
+        self.assertIsNone(check_period(record, self.jalali_now))
+
+
+class CheckValidateRecordTests(TestCase):
+
+    jalali_now = JalaliDate.today()
+
+    def test_valid_record_returns_empty_list(self):
+        record = _valid_record()
+        self.assertEqual(validate_record(record, self.jalali_now), [])
+
+    def test_missing_field_returns_e001(self):
         record = _valid_record()
         del record["debit"]
-        self.assertIsNone(check_balance_consistency(record))
+        result = validate_record(record, self.jalali_now)
+        self.assertIn("E001", result)
 
-    def test_missing_credit_is_skipped(self):
+    def test_wrong_string_type_returns_e002(self):
         record = _valid_record()
-        del record["credit"]
-        self.assertIsNone(check_balance_consistency(record))
+        record["bank_code"] = 101
+        result = validate_record(record, self.jalali_now)
+        self.assertIn("E002", result)
 
-    def test_missing_balance_is_skipped(self):
-        record = _valid_record()
-        del record["balance"]
-        self.assertIsNone(check_balance_consistency(record))
-
-    def test_none_debit_is_skipped(self):
-        record = _valid_record()
-        record["debit"] = None
-        self.assertIsNone(check_balance_consistency(record))
-
-    def test_wrong_type_debit_is_skipped(self):
+    def test_wrong_numeric_type_returns_e002(self):
         record = _valid_record()
         record["debit"] = "1000"
-        self.assertIsNone(check_balance_consistency(record))
+        result = validate_record(record, self.jalali_now)
+        self.assertIn("E002", result)
 
-    def test_bool_debit_is_skipped(self):
+    def test_both_type_failures_return_single_e002(self):
         record = _valid_record()
-        record["debit"] = True
-        self.assertIsNone(check_balance_consistency(record))
+        record["bank_code"] = 101
+        record["debit"] = "1000"
+        result = validate_record(record, self.jalali_now)
+        self.assertEqual(result.count("E002"), 1)
 
-    def test_whole_floats_still_balance(self):
+    def test_none_value_returns_e003(self):
         record = _valid_record()
-        record["debit"] = 1000.0
-        record["credit"] = 400.0
-        record["balance"] = 600.0
-        self.assertIsNone(check_balance_consistency(record))
+        record["bank_code"] = None
+        result = validate_record(record, self.jalali_now)
+        self.assertIn("E003", result)
 
-    def test_negative_balance_is_ok_if_math_matches(self):
+    def test_unknown_bank_code_returns_e004(self):
         record = _valid_record()
-        record["debit"] = 100
-        record["credit"] = 500
-        record["balance"] = -400
-        self.assertIsNone(check_balance_consistency(record))
+        record["bank_code"] = "999"
+        result = validate_record(record, self.jalali_now)
+        self.assertIn("E004", result)
 
-    def test_bad_float_input_pass(self):
+    def test_bad_period_returns_e005(self):
         record = _valid_record()
-        record["debit"] = 100.23
-        record["credit"] = 80
-        record["balance"] = 20.23
-        self.assertIsNone(check_balance_consistency(record))
+        record["period"] = "1405/07"
+        result = validate_record(record, self.jalali_now)
+        self.assertIn("E005", result)
+
+    def test_balance_mismatch_returns_e006(self):
+        record = _valid_record()
+        record["balance"] = 999
+        result = validate_record(record, self.jalali_now)
+        self.assertIn("E006", result)
+
+    def test_multiple_errors_all_returned(self):
+        record = _valid_record()
+        record["bank_code"] = "999"
+        record["balance"] = 999
+        result = validate_record(record, self.jalali_now)
+        self.assertIn("E004", result)
+        self.assertIn("E006", result)
+
+    def test_missing_debit_does_not_trigger_e006(self):
+        record = _valid_record()
+        del record["debit"]
+        result = validate_record(record, self.jalali_now)
+        self.assertIn("E001", result)
+        self.assertNotIn("E006", result)
+
+    def test_missing_field_does_not_trigger_e005(self):
+        record = _valid_record()
+        del record["period"]
+        result = validate_record(record, self.jalali_now)
+        self.assertIn("E001", result)
+        self.assertNotIn("E005", result)
 
 
+class ValidateDataframeTests(TestCase):
+
+    def _valid_records(self):
+        return [
+            {"bank_code": "101", "period": "1405/03", "account_code": "12", "debit": 1000, "credit": 400, "balance": 600},
+            {"bank_code": "002", "period": "1405/03", "account_code": "13", "debit": 500, "credit": 200, "balance": 300},
+        ]
+
+    def test_all_valid_rows(self):
+        df = pd.DataFrame(self._valid_records())
+        result = validate_dataframe(df)
+
+        self.assertEqual(result["valid"].tolist(), [True, True])
+        self.assertEqual(result["errors"].tolist(), [[], []])
+
+    def test_one_invalid_row(self):
+        records = self._valid_records()
+        records[1]["bank_code"] = "999"
+        df = pd.DataFrame(records)
+        result = validate_dataframe(df)
+
+        self.assertEqual(result["valid"].tolist(), [True, False])
+        self.assertIn("E004", result["errors"].iloc[1])
+
+    def test_errors_aligned_with_rows(self):
+        records = self._valid_records()
+        records[0]["balance"] = 999
+        df = pd.DataFrame(records)
+        result = validate_dataframe(df)
+
+        self.assertIn("E006", result["errors"].iloc[0])
+        self.assertEqual(result["errors"].iloc[1], [])
+
+    def test_nan_becomes_none(self):
+        records = self._valid_records()
+        records[0]["bank_code"] = None
+        df = pd.DataFrame(records)
+        result = validate_dataframe(df)
+
+        self.assertFalse(result["valid"].iloc[0])
+        self.assertIn("E003", result["errors"].iloc[0])
+
+    def test_multiple_errors_on_same_row(self):
+        records = self._valid_records()
+        records[0]["bank_code"] = "999"
+        records[0]["balance"] = 999
+        df = pd.DataFrame(records)
+        result = validate_dataframe(df)
+
+        codes = result["errors"].iloc[0]
+        self.assertIn("E004", codes)
+        self.assertIn("E006", codes)

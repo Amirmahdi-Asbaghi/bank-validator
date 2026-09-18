@@ -14,8 +14,6 @@ class BankRecord(models.Model):
         # TextChoices is Django's helper for defining a fixed set of choices,
         # pairing each stored value with a human-readable label 
         # the first value stores in db and the second one is human-readable shown in admin and api's
-
-        JSON_BODY = "json_body", "JSON Body" # equivalent ('json_body', 'JSON Body') 
         JSON_FILE = "json_file", "JSON File" # (value, label)
         CSV_FILE = "csv_file", "CSV File"
 
