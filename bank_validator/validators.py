@@ -10,6 +10,7 @@ STRING_FIELDS = ["bank_code", "period", "account_code"]
 NUMERIC_FIELDS = ["debit", "credit", "balance"]
 PERIOD_PATTERN = re.compile(r"\d{4}/\d{2}") # YYYY/MM
 ALLOWED_BANK_CODES = ["101", "002", "305", "112", "310"]
+ERROR_CODES = ["E001", "E002", "E003", "E004", "E005", "E006", "E007"]
 
 
 def check_required_fields(record):
@@ -152,6 +153,28 @@ def check_duplicates(df):
 
     return duplicate_indices
 
+
+def build_summary(df):
+    total = len(df)
+
+    valid_count = df["valid"].sum()
+    invalid_count = total - valid_count
+
+    # creating dict for better counting of errors
+    errors_by_code = {}
+    for code in ERROR_CODES:
+        errors_by_code[code] = 0
+
+    for codes in df["errors"]:
+        for code in codes:
+            errors_by_code[code] += 1
+
+    return {
+        "total": total,
+        "valid": int(valid_count),
+        "invalid": int(invalid_count),
+        "errors_by_code": errors_by_code,
+    }
 
 # helper function
 def _is_valid_number(value):

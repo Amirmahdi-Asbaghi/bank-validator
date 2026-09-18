@@ -12,6 +12,8 @@ from bank_validator.validators import (
     ALLOWED_BANK_CODES,
     validate_dataframe,
     check_duplicates,
+    build_summary,
+    ERROR_CODES
 )
 from persiantools.jdatetime import JalaliDate
 import pandas as pd
@@ -283,6 +285,62 @@ class CheckPeriodTests(TestCase):
         self.assertIsNone(check_period(record, self.jalali_now))
 
 
+class CheckBalanceConsistencyTests(TestCase):
+
+    def test_balanced_record(self):
+        record = _valid_record()
+        self.assertIsNone(check_balance_consistency(record))
+
+    def test_balance_mismatch(self):
+        record = _valid_record()
+        record["balance"] = 999
+        self.assertEqual(check_balance_consistency(record), "E006")
+
+    def test_missing_debit_is_skipped(self):
+        record = _valid_record()
+        del record["debit"]
+        self.assertIsNone(check_balance_consistency(record))
+
+    def test_missing_credit_is_skipped(self):
+        record = _valid_record()
+        del record["credit"]
+        self.assertIsNone(check_balance_consistency(record))
+
+    def test_missing_balance_is_skipped(self):
+        record = _valid_record()
+        del record["balance"]
+        self.assertIsNone(check_balance_consistency(record))
+
+    def test_none_debit_is_skipped(self):
+        record = _valid_record()
+        record["debit"] = None
+        self.assertIsNone(check_balance_consistency(record))
+
+    def test_wrong_type_debit_is_skipped(self):
+        record = _valid_record()
+        record["debit"] = "1000"
+        self.assertIsNone(check_balance_consistency(record))
+
+    def test_bool_debit_is_skipped(self):
+        record = _valid_record()
+        record["debit"] = True
+        self.assertIsNone(check_balance_consistency(record))
+
+    def test_whole_floats_still_balance(self):
+        record = _valid_record()
+        record["debit"] = 1000.0
+        record["credit"] = 400.0
+        record["balance"] = 600.0
+        self.assertIsNone(check_balance_consistency(record))
+
+    def test_negative_balance_is_ok_if_math_matches(self):
+        record = _valid_record()
+        record["debit"] = 100
+        record["credit"] = 500
+        record["balance"] = -400
+        self.assertIsNone(check_balance_consistency(record))
+
+
 class CheckValidateRecordTests(TestCase):
 
     jalali_now = JalaliDate.today()
@@ -549,3 +607,107 @@ class CheckDuplicatesTests(TestCase):
             {"bank_code": "101", "account_code": "A1", "period": "1405/04"},
         ])
         self.assertEqual(check_duplicates(df), set())
+
+
+class BuildSummaryTests(TestCase):
+
+    def _df(self, records):
+        return pd.DataFrame(records)
+
+    def _valid_row(self, **overrides):
+        row = {
+            "bank_code": "101",
+            "period": "1405/03",
+            "account_code": "A1",
+            "debit": 1000,
+            "credit": 400,
+            "balance": 600,
+            "errors": [],
+            "valid": True,
+        }
+        row.update(overrides)
+        return row
+
+    def test_all_valid(self):
+        df = self._df([
+            self._valid_row(account_code="A1"),
+            self._valid_row(account_code="A2"),
+        ])
+        summary = build_summary(df)
+
+        self.assertEqual(summary["total"], 2)
+        self.assertEqual(summary["valid"], 2)
+        self.assertEqual(summary["invalid"], 0)
+        self.assertEqual(summary["errors_by_code"]["E007"], 0)
+
+    def test_one_invalid_row(self):
+        df = self._df([
+            self._valid_row(account_code="A1"),
+            self._valid_row(account_code="A2", errors=["E004"], valid=False),
+        ])
+        summary = build_summary(df)
+
+        self.assertEqual(summary["total"], 2)
+        self.assertEqual(summary["valid"], 1)
+        self.assertEqual(summary["invalid"], 1)
+        self.assertEqual(summary["errors_by_code"]["E004"], 1)
+
+    def test_multiple_errors_on_same_row(self):
+        df = self._df([
+            self._valid_row(errors=["E004", "E006"], valid=False),
+        ])
+        summary = build_summary(df)
+
+        self.assertEqual(summary["errors_by_code"]["E004"], 1)
+        self.assertEqual(summary["errors_by_code"]["E006"], 1)
+
+    def test_duplicates_counted(self):
+        df = self._df([
+            self._valid_row(errors=["E007"], valid=False),
+            self._valid_row(errors=["E007"], valid=False),
+            self._valid_row(account_code="A2"),
+        ])
+        summary = build_summary(df)
+
+        self.assertEqual(summary["errors_by_code"]["E007"], 2)
+        self.assertEqual(summary["valid"], 1)
+        self.assertEqual(summary["invalid"], 2)
+
+    def test_all_codes_present_even_if_zero(self):
+        df = self._df([
+            self._valid_row(),
+        ])
+        summary = build_summary(df)
+
+        for code in ERROR_CODES:
+            self.assertIn(code, summary["errors_by_code"])
+            self.assertEqual(summary["errors_by_code"][code], 0)
+
+    def test_empty_dataframe(self):
+        df = self._df([])
+        df["errors"] = []
+        df["valid"] = []
+
+        summary = build_summary(df)
+
+        self.assertEqual(summary["total"], 0)
+        self.assertEqual(summary["valid"], 0)
+        self.assertEqual(summary["invalid"], 0)
+        self.assertEqual(summary["errors_by_code"]["E007"], 0)
+
+    def test_mixed_run(self):
+        df = self._df([
+            self._valid_row(account_code="A1"),
+            self._valid_row(account_code="A2", errors=["E004"], valid=False),
+            self._valid_row(account_code="A3", errors=["E002", "E005"], valid=False),
+            self._valid_row(account_code="A4", errors=["E007"], valid=False),
+        ])
+        summary = build_summary(df)
+
+        self.assertEqual(summary["total"], 4)
+        self.assertEqual(summary["valid"], 1)
+        self.assertEqual(summary["invalid"], 3)
+        self.assertEqual(summary["errors_by_code"]["E002"], 1)
+        self.assertEqual(summary["errors_by_code"]["E004"], 1)
+        self.assertEqual(summary["errors_by_code"]["E005"], 1)
+        self.assertEqual(summary["errors_by_code"]["E007"], 1)
