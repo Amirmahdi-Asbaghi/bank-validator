@@ -12,11 +12,11 @@ PERIOD_PATTERN = re.compile(r"\d{4}/\d{2}") # YYYY/MM
 ALLOWED_BANK_CODES = ["101", "002", "305", "112", "310"]
 ERROR_CODES = ["E001", "E002", "E003", "E004", "E005", "E006", "E007"]
 
-
+# E001
 def check_required_fields(record):
     return "E001" if any(field not in record for field in REQUIRED_FIELDS) else None
 
-
+# E002
 def check_string_types(record):
     for field in STRING_FIELDS:
         if field in record and record[field] is not None:
@@ -24,7 +24,7 @@ def check_string_types(record):
                 return "E002"
     return None
 
-
+# E002
 def check_numeric_types(record):
     for field in NUMERIC_FIELDS:
         if field in record and record[field] is not None:
@@ -33,7 +33,7 @@ def check_numeric_types(record):
                 return "E002"
     return None
 
-
+# E003
 def check_nulls_or_empty(record):
     for field in REQUIRED_FIELDS:
         if field in record:
@@ -41,14 +41,14 @@ def check_nulls_or_empty(record):
                 return "E003"
     return None
 
-
+# E004
 def check_bank_code(record):
     if "bank_code" in record and record["bank_code"] is not None:
         if record["bank_code"] not in ALLOWED_BANK_CODES:
             return "E004"
     return None
 
-
+# E005
 def check_period(record, jalali_now):
     if "period" in record and record["period"] is not None and record["period"] != "":
         # check format
@@ -63,7 +63,7 @@ def check_period(record, jalali_now):
             return "E005"
     return None
 
-
+# E006
 def check_balance_consistency(record):
     for field in NUMERIC_FIELDS:
         if field not in record or record[field] is None:
@@ -126,7 +126,7 @@ def validate_dataframe(df):
     return df
 
 
-# batch_validator
+# batch_validator E007
 def check_duplicates(df):
     # logic looks like the group by
     # {key:("bank_code", "account_code", "period")- > tuple, value:[list of rows that are duplicate of this row]}
