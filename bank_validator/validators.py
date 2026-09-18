@@ -78,10 +78,6 @@ def check_balance_consistency(record):
             return "E006"
     return None
 
-# batch_validator
-def check_duplicates(data_frame):
-    pass
-
 
 def validate_record(record, jalali_now):
     errors = []
@@ -124,6 +120,34 @@ def validate_dataframe(df):
 
     return df
 
+
+# batch_validator
+def check_duplicates(df):
+    # logic looks like the group by
+    # {key:("bank_code", "account_code", "period")- > tuple, value:[list of rows that are duplicate of this row]}
+    groups = {}
+
+    for index, row in df.iterrows():
+        # building key's in dict
+        key = (str(row.get("bank_code")), str(row.get("account_code")), str(row.get("period")))
+        # check if
+        if "None" in key or "" in key:
+            continue
+
+        # creating the dict if its new it comes with the index
+        # if it is duplicate the index list of the first accrue will be updated
+        if key in groups:
+            groups[key].append(index)
+        else:
+            groups[key] = [index]
+
+    # adding the index of the duplicate rows in a set
+    duplicate_indices = set()
+    for indices in groups.values():
+        if len(indices) > 1:
+            duplicate_indices.update(indices)
+
+    return duplicate_indices
 
 
 # helper function
