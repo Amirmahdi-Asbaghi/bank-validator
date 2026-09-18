@@ -416,6 +416,66 @@ class ValidateDataframeTests(TestCase):
         self.assertIn("E004", codes)
         self.assertIn("E006", codes)
 
+    def test_duplicate_rows_get_e007(self):
+        records = self._valid_records()
+        records.append(dict(records[0]))
+        df = pd.DataFrame(records)
+        result = validate_dataframe(df)
+
+        self.assertIn("E007", result["errors"].iloc[0])
+        self.assertIn("E007", result["errors"].iloc[2])
+        self.assertNotIn("E007", result["errors"].iloc[1])
+
+    def test_all_copies_of_duplicate_flagged(self):
+        records = self._valid_records()
+        records.append(dict(records[0]))
+        records.append(dict(records[0]))
+        df = pd.DataFrame(records)
+        result = validate_dataframe(df)
+
+        self.assertIn("E007", result["errors"].iloc[0])
+        self.assertIn("E007", result["errors"].iloc[1 + 1])
+        self.assertIn("E007", result["errors"].iloc[3])
+
+    def test_duplicate_rows_are_invalid(self):
+        records = self._valid_records()
+        records.append(dict(records[0]))
+        df = pd.DataFrame(records)
+        result = validate_dataframe(df)
+
+        self.assertFalse(result["valid"].iloc[0])
+        self.assertFalse(result["valid"].iloc[2])
+        self.assertTrue(result["valid"].iloc[1])
+
+    def test_no_duplicates_no_e007(self):
+        df = pd.DataFrame(self._valid_records())
+        result = validate_dataframe(df)
+
+        for codes in result["errors"]:
+            self.assertNotIn("E007", codes)
+
+    def test_duplicate_with_other_errors_has_both(self):
+        records = self._valid_records()
+        records[0]["bank_code"] = "999"
+        records.append(dict(records[0]))
+        df = pd.DataFrame(records)
+        result = validate_dataframe(df)
+
+        codes = result["errors"].iloc[0]
+        self.assertIn("E004", codes)
+        self.assertIn("E007", codes)
+
+    def test_different_period_not_duplicate(self):
+        records = self._valid_records()
+        records[1]["bank_code"] = records[0]["bank_code"]
+        records[1]["account_code"] = records[0]["account_code"]
+        records[1]["period"] = "1405/04"
+        df = pd.DataFrame(records)
+        result = validate_dataframe(df)
+
+        self.assertNotIn("E007", result["errors"].iloc[0])
+        self.assertNotIn("E007", result["errors"].iloc[1])
+
 
 class CheckDuplicatesTests(TestCase):
 

@@ -101,6 +101,7 @@ def validate_dataframe(df):
     jalali_now = JalaliDate.today()
 
     errors_column = []
+    duplicate_indexes = check_duplicates(df)
 
     for _, row in df.iterrows():  # _ -> index that we don't want
         record = row.to_dict()
@@ -110,8 +111,11 @@ def validate_dataframe(df):
                 record[key] = None
 
         errors_column.append(validate_record(record, jalali_now))
-
     df["errors"] = errors_column
+
+    for index in duplicate_indexes:
+        df.at[index, "errors"].append("E007")
+
 
     valid_column = []
     for codes in df["errors"]:
@@ -133,7 +137,6 @@ def check_duplicates(df):
         # check if
         if "None" in key or "" in key or "nan" in key:
             continue
-        print(f"my input index = {index} key = {key}")
         # creating the dict if its new it comes with the index
         # if it is duplicate the index list of the first accrue will be updated
         if key in groups:
