@@ -11,6 +11,7 @@ from bank_validator.validators import (
     validate_record,
     ALLOWED_BANK_CODES,
     validate_dataframe,
+    check_duplicates,
 )
 from persiantools.jdatetime import JalaliDate
 import pandas as pd
@@ -414,3 +415,77 @@ class ValidateDataframeTests(TestCase):
         codes = result["errors"].iloc[0]
         self.assertIn("E004", codes)
         self.assertIn("E006", codes)
+
+
+class CheckDuplicatesTests(TestCase):
+
+    def _df(self, records):
+        return pd.DataFrame(records)
+
+    def test_no_duplicates(self):
+        df = self._df([
+            {"bank_code": "101", "account_code": "A1", "period": "1405/03"},
+            {"bank_code": "202", "account_code": "A2", "period": "1405/03"},
+        ])
+        self.assertEqual(check_duplicates(df), set())
+
+    def test_one_duplicate_pair(self):
+        df = self._df([
+            {"bank_code": "101", "account_code": "A1", "period": "1405/03"},
+            {"bank_code": "202", "account_code": "A2", "period": "1405/03"},
+            {"bank_code": "101", "account_code": "A1", "period": "1405/03"},
+        ])
+        self.assertEqual(check_duplicates(df), {0, 2})
+
+    def test_three_copies(self):
+        df = self._df([
+            {"bank_code": "101", "account_code": "A1", "period": "1405/03"},
+            {"bank_code": "101", "account_code": "A1", "period": "1405/03"},
+            {"bank_code": "101", "account_code": "A1", "period": "1405/03"},
+        ])
+        self.assertEqual(check_duplicates(df), {0, 1, 2})
+
+    def test_two_separate_groups(self):
+        df = self._df([
+            {"bank_code": "101", "account_code": "A1", "period": "1405/03"},
+            {"bank_code": "202", "account_code": "A2", "period": "1405/03"},
+            {"bank_code": "101", "account_code": "A1", "period": "1405/03"},
+            {"bank_code": "202", "account_code": "A2", "period": "1405/03"},
+        ])
+        self.assertEqual(check_duplicates(df), {0, 2, 1, 3})
+
+    def test_unique_row_not_flagged(self):
+        df = self._df([
+            {"bank_code": "101", "account_code": "A1", "period": "1405/03"},
+            {"bank_code": "101", "account_code": "A1", "period": "1405/03"},
+            {"bank_code": "303", "account_code": "A3", "period": "1405/03"},
+        ])
+        self.assertEqual(check_duplicates(df), {0, 1})
+
+    def test_type_normalization(self):
+        df = self._df([
+            {"bank_code": 101, "account_code": "A1", "period": "1405/03"},
+            {"bank_code": "101", "account_code": "A1", "period": "1405/03"},
+        ])
+        self.assertEqual(check_duplicates(df), {0, 1})
+
+    def test_missing_key_part_is_skipped(self):
+        df = self._df([
+            {"bank_code": None, "account_code": "A1", "period": "1405/03"},
+            {"bank_code": None, "account_code": "A1", "period": "1405/03"},
+        ])
+        self.assertEqual(check_duplicates(df), set())
+
+    def test_empty_string_key_part_is_skipped(self):
+        df = self._df([
+            {"bank_code": "", "account_code": "A1", "period": "1405/03"},
+            {"bank_code": "", "account_code": "A1", "period": "1405/03"},
+        ])
+        self.assertEqual(check_duplicates(df), set())
+
+    def test_different_period_not_duplicate(self):
+        df = self._df([
+            {"bank_code": "101", "account_code": "A1", "period": "1405/03"},
+            {"bank_code": "101", "account_code": "A1", "period": "1405/04"},
+        ])
+        self.assertEqual(check_duplicates(df), set())

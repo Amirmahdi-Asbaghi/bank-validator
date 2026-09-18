@@ -131,9 +131,9 @@ def check_duplicates(df):
         # building key's in dict
         key = (str(row.get("bank_code")), str(row.get("account_code")), str(row.get("period")))
         # check if
-        if "None" in key or "" in key:
+        if "None" in key or "" in key or "nan" in key:
             continue
-
+        print(f"my input index = {index} key = {key}")
         # creating the dict if its new it comes with the index
         # if it is duplicate the index list of the first accrue will be updated
         if key in groups:
