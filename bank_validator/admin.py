@@ -18,9 +18,9 @@ class BankRecordAdmin(admin.ModelAdmin):
 
 @admin.register(ValidationRun)
 class ValidationRunAdmin(admin.ModelAdmin):
-    list_display = ("run_id", "timestamp", "file_name", "total", "valid_count", "invalid_count")
+    list_display = ("run_id", "timestamp", "file_name", "total", "valid_count", "invalid_count", "errors_by_code")
     search_fields = ("run_id", "file_name")
-    readonly_fields = ("run_id", "timestamp", "file_name")
+    readonly_fields = ("run_id", "timestamp", "file_name", "total", "valid_count", "invalid_count", "errors_by_code")
 
 
 
