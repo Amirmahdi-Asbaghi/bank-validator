@@ -1,5 +1,6 @@
 from django.contrib import admin
-from .models import BankRecord
+from .models import BankRecord, ValidationRun
+
 
 @admin.register(BankRecord)
 class BankRecordAdmin(admin.ModelAdmin):
@@ -13,6 +14,13 @@ class BankRecordAdmin(admin.ModelAdmin):
                     "bank_code", "period", "account_code", "debit", "credit", "balance",
                     "valid", "errors")
     readonly_fields = ("run_id", "timestamp", "file_name",)
+
+
+@admin.register(ValidationRun)
+class ValidationRunAdmin(admin.ModelAdmin):
+    list_display = ("run_id", "timestamp", "file_name", "total", "valid_count", "invalid_count")
+    search_fields = ("run_id", "file_name")
+    readonly_fields = ("run_id", "timestamp")
 
 
 

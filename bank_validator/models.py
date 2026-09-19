@@ -35,3 +35,19 @@ class BankRecord(models.Model):
 
     def __str__(self):
         return f"{self.run_id} | {self.bank_code} | {self.account_code}"
+
+
+
+class ValidationRun(models.Model):
+    run_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    file_name = models.CharField(max_length=255, blank=True, default="")
+    total = models.IntegerField(default=0)
+    valid_count = models.IntegerField(default=0)
+    invalid_count = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ["-timestamp"]
+
+    def __str__(self):
+        return f"{self.run_id} | {self.file_name} | {self.total}"
