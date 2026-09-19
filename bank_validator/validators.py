@@ -9,7 +9,7 @@ REQUIRED_FIELDS = ["bank_code", "period", "account_code", "debit", "credit", "ba
 STRING_FIELDS = ["bank_code", "period", "account_code"]
 NUMERIC_FIELDS = ["debit", "credit", "balance"]
 PERIOD_PATTERN = re.compile(r"\d{4}/\d{2}") # YYYY/MM
-ALLOWED_BANK_CODES = ["101", "002", "305", "112", "310"]
+ALLOWED_BANK_CODES = ["101", "202", "305", "112", "310", "002"]
 ERROR_CODES = ["E001", "E002", "E003", "E004", "E005", "E006", "E007"]
 
 # E001

@@ -15,9 +15,9 @@ from bank_validator.validators import (
     build_summary,
     ERROR_CODES
 )
-
+from bank_validator.services import process_csv, process_json
 from bank_validator.readers import read_json, read_csv
-
+from bank_validator.models import BankRecord, ValidationRun
 from persiantools.jdatetime import JalaliDate
 import pandas as pd
 import io
@@ -797,3 +797,143 @@ class ReadJsonTests(TestCase):
     def test_empty_json_list_raises(self):
         with self.assertRaises(ValueError):
             read_json("[]")
+
+
+class ProcessCsvTests(TestCase):
+
+    def _csv_text(self):
+        return (
+            "bank_code,period,account_code,debit,credit,balance\n"
+            '101,1405/03,A1,1000,400,600\n'
+            '202,1405/03,A2,500,200,300\n'
+        )
+
+    def _csv_file(self):
+        return io.StringIO(self._csv_text())
+
+    def test_creates_validation_run(self):
+        process_csv(self._csv_file(), file_name="test.csv")
+
+        self.assertEqual(ValidationRun.objects.count(), 1)
+
+    def test_creates_one_record_per_row(self):
+        process_csv(self._csv_file())
+
+        self.assertEqual(BankRecord.objects.count(), 2)
+
+    def test_returns_run_id_and_summary(self):
+        result = process_csv(self._csv_file())
+        print(result["summary"]["errors_by_code"])
+        self.assertIn("run_id", result)
+        self.assertIn("summary", result)
+        self.assertEqual(result["summary"]["total"], 2)
+        self.assertEqual(result["summary"]["valid"], 2)
+
+    def test_records_share_the_run_id(self):
+        result = process_csv(self._csv_file())
+        run_id = result["run_id"]
+
+        records = BankRecord.objects.filter(run_id=run_id)
+        self.assertEqual(records.count(), 2)
+
+    def test_file_name_saved_on_run(self):
+        process_csv(self._csv_file(), file_name="test.csv")
+
+        run = ValidationRun.objects.first()
+        self.assertEqual(run.file_name, "test.csv")
+
+    def test_summary_matches_run_row(self):
+        result = process_csv(self._csv_file())
+        run = ValidationRun.objects.first()
+
+        self.assertEqual(run.total, result["summary"]["total"])
+        self.assertEqual(run.valid_count, result["summary"]["valid"])
+        self.assertEqual(run.invalid_count, result["summary"]["invalid"])
+        self.assertEqual(run.errors_by_code, result["summary"]["errors_by_code"])
+
+    def test_invalid_row_is_stored(self):
+        csv = (
+            "bank_code,period,account_code,debit,credit,balance\n"
+            '999,1405/03,A1,1000,400,600\n'
+        )
+        process_csv(io.StringIO(csv))
+
+        record = BankRecord.objects.first()
+        self.assertFalse(record.valid)
+        self.assertIn("E004", record.errors)
+
+
+class ProcessJsonTests(TestCase):
+
+    def _json_list_text(self):
+        return json.dumps([
+            {"bank_code": "101", "period": "1405/03", "account_code": "A1", "debit": 1000, "credit": 400, "balance": 600},
+            {"bank_code": "002", "period": "1405/03", "account_code": "A2", "debit": 500, "credit": 200, "balance": 300},
+        ])
+
+    def _json_file(self):
+        return io.StringIO(self._json_list_text())
+
+    def test_creates_validation_run(self):
+        process_json(self._json_file(), file_name="test.json")
+
+        self.assertEqual(ValidationRun.objects.count(), 1)
+
+    def test_creates_one_record_per_row(self):
+        process_json(self._json_file())
+
+        self.assertEqual(BankRecord.objects.count(), 2)
+
+    def test_returns_run_id_and_summary(self):
+        result = process_json(self._json_file())
+
+        self.assertIn("run_id", result)
+        self.assertIn("summary", result)
+        self.assertEqual(result["summary"]["total"], 2)
+        self.assertEqual(result["summary"]["valid"], 2)
+
+    def test_records_share_the_run_id(self):
+        result = process_json(self._json_file())
+        run_id = result["run_id"]
+
+        records = BankRecord.objects.filter(run_id=run_id)
+        self.assertEqual(records.count(), 2)
+
+    def test_file_name_saved_on_run(self):
+        process_json(self._json_file(), file_name="test.json")
+
+        run = ValidationRun.objects.first()
+        self.assertEqual(run.file_name, "test.json")
+
+    def test_summary_matches_run_row(self):
+        result = process_json(self._json_file())
+        run = ValidationRun.objects.first()
+
+        self.assertEqual(run.total, result["summary"]["total"])
+        self.assertEqual(run.valid_count, result["summary"]["valid"])
+        self.assertEqual(run.invalid_count, result["summary"]["invalid"])
+        self.assertEqual(run.errors_by_code, result["summary"]["errors_by_code"])
+
+    def test_invalid_row_is_stored(self):
+        json_text = json.dumps([
+            {"bank_code": "999", "period": "1405/03", "account_code": "A1", "debit": 1000, "credit": 400, "balance": 600},
+        ])
+        process_json(io.StringIO(json_text))
+
+        record = BankRecord.objects.first()
+        self.assertFalse(record.valid)
+        self.assertIn("E004", record.errors)
+
+    def test_raw_json_string(self):
+        result = process_json(self._json_list_text())
+
+        self.assertEqual(result["summary"]["total"], 2)
+        self.assertEqual(result["summary"]["valid"], 2)
+
+    def test_single_object_json(self):
+        json_text = json.dumps(
+            {"bank_code": "101", "period": "1405/03", "account_code": "A1", "debit": 1000, "credit": 400, "balance": 600}
+        )
+        process_json(io.StringIO(json_text))
+
+        self.assertEqual(BankRecord.objects.count(), 1)

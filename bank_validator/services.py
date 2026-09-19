@@ -35,7 +35,7 @@ def _save_run(summary, run_id, file_name):
         total=summary["total"],
         valid_count=summary["valid"],
         invalid_count=summary["invalid"],
-        errors_count=summary["errors_by_code"],
+        errors_by_code=summary["errors_by_code"],
     )
 
 
