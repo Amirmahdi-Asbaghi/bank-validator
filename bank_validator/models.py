@@ -9,18 +9,11 @@ class BankRecord(models.Model):
     # source type only meaning 
     # "BankRecord.SourceType.JSON_FILE" better understanding access for later use
 
-    class SourceType(models.TextChoices):
 
-        # TextChoices is Django's helper for defining a fixed set of choices,
-        # pairing each stored value with a human-readable label 
-        # the first value stores in db and the second one is human-readable shown in admin and api's
-        JSON_FILE = "json_file", "JSON File" # (value, label)
-        CSV_FILE = "csv_file", "CSV File"
 
     # the columns I add to the data
     run_id = models.UUIDField(default=uuid.uuid4, db_index=True) # uuid -> Universally Unique Identifiers (128-bit)
     timestamp = models.DateTimeField(auto_now_add=True)
-    source_type = models.CharField(max_length=20, choices=SourceType)
     file_name = models.CharField(max_length=255, blank=True, default="")
 
     # the columns from data

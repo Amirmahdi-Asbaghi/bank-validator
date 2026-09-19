@@ -15,8 +15,13 @@ from bank_validator.validators import (
     build_summary,
     ERROR_CODES
 )
+
+from bank_validator.readers import read_json, read_csv
+
 from persiantools.jdatetime import JalaliDate
 import pandas as pd
+import io
+import json
 
 def _valid_record():
     return {
@@ -711,3 +716,84 @@ class BuildSummaryTests(TestCase):
         self.assertEqual(summary["errors_by_code"]["E004"], 1)
         self.assertEqual(summary["errors_by_code"]["E005"], 1)
         self.assertEqual(summary["errors_by_code"]["E007"], 1)
+
+
+class ReadCsvTests(TestCase):
+
+    def _csv_text(self):
+        return (
+            "bank_code,period,account_code,debit,credit,balance\n"
+            '101,1405/03,A1,1000,400,600\n'
+            '202,1405/03,A2,500,200,300\n'
+        )
+
+    def _csv_file(self):
+        return io.StringIO(self._csv_text())
+
+    def test_valid_csv_file(self):
+        df = read_csv(self._csv_file())
+
+        self.assertEqual(len(df), 2)
+        self.assertIn("bank_code", df.columns)
+        self.assertIn("period", df.columns)
+        self.assertIn("account_code", df.columns)
+        self.assertIn("debit", df.columns)
+        self.assertIn("credit", df.columns)
+        self.assertIn("balance", df.columns)
+
+
+    def test_empty_csv_raises(self):
+        empty = io.StringIO("")
+        with self.assertRaises(ValueError):
+            read_csv(empty)
+
+
+class ReadJsonTests(TestCase):
+
+    def _json_list_text(self):
+        return json.dumps([
+            {"bank_code": "101", "period": "1405/03", "account_code": "A1", "debit": 1000, "credit": 400, "balance": 600},
+            {"bank_code": "202", "period": "1405/03", "account_code": "A2", "debit": 500, "credit": 200, "balance": 300},
+        ])
+
+    def _json_object_text(self):
+        return json.dumps({
+            "bank_code": "101", "period": "1405/03", "account_code": "A1",
+            "debit": 1000, "credit": 400, "balance": 600,
+        })
+
+    def test_valid_json_list_string(self):
+        df = read_json(self._json_list_text())
+
+        self.assertEqual(len(df), 2)
+        self.assertIn("bank_code", df.columns)
+        self.assertIn("period", df.columns)
+        self.assertIn("account_code", df.columns)
+        self.assertIn("debit", df.columns)
+        self.assertIn("credit", df.columns)
+        self.assertIn("balance", df.columns)
+
+    def test_valid_json_single_object_string(self):
+        df = read_json(self._json_object_text())
+
+        self.assertEqual(len(df), 1)
+        self.assertIn("bank_code", df.columns)
+
+    def test_valid_json_file(self):
+        file = io.StringIO(self._json_list_text())
+        df = read_json(file)
+
+        self.assertEqual(len(df), 2)
+
+    def test_malformed_json_raises(self):
+        bad = io.StringIO("{not valid json")
+        with self.assertRaises(ValueError):
+            read_json(bad)
+
+    def test_json_not_list_or_dict_raises(self):
+        with self.assertRaises(ValueError):
+            read_json(json.dumps("just a string"))
+
+    def test_empty_json_list_raises(self):
+        with self.assertRaises(ValueError):
+            read_json("[]")
