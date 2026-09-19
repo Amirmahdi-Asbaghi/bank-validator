@@ -4,17 +4,10 @@ from django.db import models
 
 # the only table in the db
 class BankRecord(models.Model):
-    # defines the allowed input modes for records
-    # I use nested class for better scope
-    # source type only meaning 
-    # "BankRecord.SourceType.JSON_FILE" better understanding access for later use
-
-
 
     # the columns I add to the data
     run_id = models.UUIDField(default=uuid.uuid4, db_index=True) # uuid -> Universally Unique Identifiers (128-bit)
     timestamp = models.DateTimeField(auto_now_add=True)
-    file_name = models.CharField(max_length=255, blank=True, default="")
 
     # the columns from data
     bank_code = models.CharField(max_length=50)
@@ -27,7 +20,7 @@ class BankRecord(models.Model):
     balance = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
 
     valid = models.BooleanField(default=False) # sqlite stores it as 0 , 1
-    errors = models.CharField(max_length=70, blank=True, default="") # max 16 errors E00...E015 and some extra
+    errors = models.JSONField(default=list, blank=True)
 
     class Meta:
         ordering = ["-timestamp"] # default order of query results
@@ -45,6 +38,7 @@ class ValidationRun(models.Model):
     total = models.IntegerField(default=0)
     valid_count = models.IntegerField(default=0)
     invalid_count = models.IntegerField(default=0)
+    errors_by_code = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ["-timestamp"]
