@@ -61,6 +61,8 @@ def check_period(record, jalali_now):
             return "E005"
         if year < 1310:
             return "E005"
+        if month > 13:
+            return "E005"
     return None
 
 # E006
