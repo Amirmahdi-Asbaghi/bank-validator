@@ -21,7 +21,7 @@ def read_csv(source):
 
 def read_json(source):
     try:
-        if isinstance(source, str):
+        if isinstance(source, (str, bytes)):
             data = json.loads(source)
         else:
             data = json.load(source)

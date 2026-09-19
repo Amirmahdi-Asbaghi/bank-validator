@@ -23,6 +23,11 @@ import pandas as pd
 import io
 import json
 
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.urls import reverse
+
+from bank_validator.models import BankRecord, ValidationRun
+
 def _valid_record():
     return {
         "bank_code": "101",
@@ -823,7 +828,6 @@ class ProcessCsvTests(TestCase):
 
     def test_returns_run_id_and_summary(self):
         result = process_csv(self._csv_file())
-        print(result["summary"]["errors_by_code"])
         self.assertIn("run_id", result)
         self.assertIn("summary", result)
         self.assertEqual(result["summary"]["total"], 2)
@@ -937,3 +941,128 @@ class ProcessJsonTests(TestCase):
         process_json(io.StringIO(json_text))
 
         self.assertEqual(BankRecord.objects.count(), 1)
+
+
+# views.py
+
+
+
+
+
+class ValidationViewTests(TestCase):
+
+    def _csv_file(self):
+        content = (
+            "bank_code,period,account_code,debit,credit,balance\n"
+            '101,1405/03,A1,1000,400,600\n'
+            '002,1405/03,A2,500,200,300\n'
+        )
+        return SimpleUploadedFile("data.csv", content.encode("utf-8"), content_type="text/csv")
+
+    def _json_file(self):
+        content = json.dumps([
+            {"bank_code": "101", "period": "1405/03", "account_code": "A1", "debit": 1000, "credit": 400, "balance": 600},
+            {"bank_code": "002", "period": "1405/03", "account_code": "A2", "debit": 500, "credit": 200, "balance": 300},
+        ])
+        return SimpleUploadedFile("data.json", content.encode("utf-8"), content_type="application/json")
+
+    def _url(self):
+        return reverse("validation")
+
+    def test_post_csv_file(self):
+        response = self.client.post(self._url(), {"file": self._csv_file()})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("run_id", response.json())
+        self.assertIn("summary", response.json())
+
+    def test_post_json_file(self):
+        response = self.client.post(self._url(), {"file": self._json_file()})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["summary"]["total"], 2)
+
+    def test_post_raw_json_body(self):
+        body = json.dumps([
+            {"bank_code": "101", "period": "1405/03", "account_code": "A1", "debit": 1000, "credit": 400, "balance": 600},
+        ])
+        response = self.client.post(self._url(), data=body, content_type="application/json")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["summary"]["total"], 1)
+
+    def test_no_input_returns_400(self):
+        response = self.client.post(self._url())
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_unsupported_file_type_returns_400(self):
+        bad = SimpleUploadedFile("data.txt", b"hello", content_type="text/plain")
+        response = self.client.post(self._url(), {"file": bad})
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_malformed_json_returns_400(self):
+        response = self.client.post(
+            self._url(), data="{not json", content_type="application/json"
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_creates_run_and_records(self):
+        response = self.client.post(self._url(), {"file": self._csv_file()})
+        run_id = response.json()["run_id"]
+
+        self.assertEqual(ValidationRun.objects.count(), 1)
+        self.assertEqual(BankRecord.objects.filter(run_id=run_id).count(), 2)
+
+    def test_summary_matches_stored_run(self):
+        response = self.client.post(self._url(), {"file": self._csv_file()})
+        run = ValidationRun.objects.first()
+
+        self.assertEqual(run.total, response.json()["summary"]["total"])
+        self.assertEqual(run.valid_count, response.json()["summary"]["valid"])
+
+
+class RunRecordsViewTests(TestCase):
+
+    def _url(self, run_id):
+        return reverse("run-records", kwargs={"run_id": run_id})
+
+    def _seed(self):
+        content = (
+            "bank_code,period,account_code,debit,credit,balance\n"
+            '101,1405/03,A1,1000,400,600\n'
+            '002,1405/03,A2,500,200,300\n'
+        )
+        file = SimpleUploadedFile("data.csv", content.encode("utf-8"), content_type="text/csv")
+        response = self.client.post(reverse("validation"), {"file": file})
+        return response.json()["run_id"]
+
+    def test_get_records_for_run(self):
+        run_id = self._seed()
+        response = self.client.get(self._url(run_id))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 2)
+
+    def test_record_has_expected_fields(self):
+        run_id = self._seed()
+        response = self.client.get(self._url(run_id))
+        record = response.json()[0]
+
+        self.assertIn("bank_code", record)
+        self.assertIn("valid", record)
+        self.assertIn("errors", record)
+        self.assertIn("run_id", record)
+
+    def test_unknown_run_id_returns_404(self):
+        fake = "00000000-0000-0000-0000-000000000000"
+        response = self.client.get(self._url(fake))
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_malformed_run_id_returns_404(self):
+        response = self.client.get("/api/v1/runs/not-a-uuid/")
+
+        self.assertEqual(response.status_code, 404)
