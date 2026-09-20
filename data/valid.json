@@ -1,0 +1,12 @@
+[
+  {"bank_code": "101", "period": "1405/03", "account_code": "A001", "debit": 1000, "credit": 400, "balance": 600},
+  {"bank_code": "002", "period": "1405/03", "account_code": "A002", "debit": 500, "credit": 200, "balance": 300},
+  {"bank_code": "305", "period": "1405/03", "account_code": "A003", "debit": 800, "credit": 300, "balance": 500},
+  {"bank_code": "112", "period": "1405/03", "account_code": "A004", "debit": 2000, "credit": 500, "balance": 1500},
+  {"bank_code": "310", "period": "1405/03", "account_code": "A005", "debit": 750, "credit": 250, "balance": 500},
+  {"bank_code": "101", "period": "1405/04", "account_code": "A006", "debit": 1200, "credit": 200, "balance": 1000},
+  {"bank_code": "002", "period": "1405/04", "account_code": "A007", "debit": 900, "credit": 400, "balance": 500},
+  {"bank_code": "305", "period": "1405/04", "account_code": "A008", "debit": 1500, "credit": 500, "balance": 1000},
+  {"bank_code": "112", "period": "1405/04", "account_code": "A009", "debit": 600, "credit": 100, "balance": 500},
+  {"bank_code": "310", "period": "1405/04", "account_code": "A010", "debit": 1100, "credit": 300, "balance": 800}
+]
