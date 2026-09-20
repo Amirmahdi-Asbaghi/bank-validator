@@ -14,6 +14,7 @@ individual records and a per-run summary, and returns the results as JSON.
 - Detects duplicates within a submission
 - Returns a summary per run: totals, valid/invalid counts, errors by code
 - Exposes a second endpoint to fetch all records for a given run
+- Provides a Django admin for browsing runs and records
 
 ---
 
@@ -22,6 +23,7 @@ individual records and a per-run summary, and returns the results as JSON.
 - Django
 - Django REST Framework
 - pandas
+- persiantools (Jalali date handling)
 - SQLite
 
 ---
@@ -70,7 +72,25 @@ Paste the output as the value of `SECRET_KEY` in `.env`.
 
     python manage.py runserver
 
-The API is now at http://localhost:8000/api/v1/
+- Admin: http://localhost:8000/admin/
+- API base: http://localhost:8000/api/v1/
+
+---
+
+## Admin
+
+The Django admin is available at:
+
+    http://localhost:8000/admin/
+
+Log in with the superuser account created during setup. From there you can:
+
+- **Validation runs** — browse every submission: its `run_id`, timestamp,
+  file name, and the counts (total, valid, invalid, errors by code).
+- **Bank records** — browse every stored row: its data, verdict (`valid`),
+  and error codes.
+
+This is the easiest way to inspect what the API stored.
 
 ---
 
@@ -106,7 +126,7 @@ Fetch all records for a given run. Returns a JSON list of records.
 
 ### Upload a CSV file
 
-Sample `sample.csv`:
+Save this as `sample.csv`:
 
     bank_code,period,account_code,debit,credit,balance
     101,1405/03,A001,1000,400,600
@@ -122,7 +142,7 @@ invalid with code `E004`.
 
 ### Upload a JSON file
 
-Sample `sample.json`:
+Save this as `sample.json`:
 
     [
       {"bank_code": "101", "period": "1405/03", "account_code": "A001", "debit": 1000, "credit": 400, "balance": 600},
@@ -136,9 +156,7 @@ Command:
 
 ### POST raw JSON
 
-    curl.exe -X POST http://localhost:8000/api/v1/validation/ ^
-      -H "Content-Type: application/json" ^
-      -d "[{\"bank_code\":\"101\",\"period\":\"1405/03\",\"account_code\":\"A001\",\"debit\":1000,\"credit\":400,\"balance\":600}]"
+    curl.exe -X POST http://localhost:8000/api/v1/validation/ -H "Content-Type: application/json" -d "[{\"bank_code\":\"101\",\"period\":\"1405/03\",\"account_code\":\"A001\",\"debit\":1000,\"credit\":400,\"balance\":600}]"
 
 ### Fetch records for a run
 
@@ -246,3 +264,6 @@ Located in `data/`:
 | valid.csv                       | 10 rows, all valid                      |
 | mixed.csv                       | 5 valid, 5 invalid (no duplicates)      |
 | invalid_and_duplicates.csv      | all invalid, all duplicated             |
+| valid.json                      | JSON version of valid.csv               |
+| mixed.json                      | JSON version of mixed.csv               |
+| invalid_and_duplicates.json     | JSON version of invalid_and_duplicates.csv |
