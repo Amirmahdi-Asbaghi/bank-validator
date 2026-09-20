@@ -16,13 +16,6 @@ ERROR_CODES = ["E001", "E002", "E003", "E004", "E005", "E006", "E007"]
 def check_required_fields(record):
     return "E001" if any(field not in record for field in REQUIRED_FIELDS) else None
 
-# E002
-def check_string_types(record):
-    for field in STRING_FIELDS:
-        if field in record and record[field] is not None:
-            if not isinstance(record[field], str):
-                return "E002"
-    return None
 
 # E002
 def check_numeric_types(record):
@@ -77,7 +70,7 @@ def check_balance_consistency(record):
     )
 
     if type_check:
-        if record["balance"] != record["debit"] - record["credit"]:
+        if float(record["balance"]) != float(record["debit"]) - float(record["credit"]):
             return "E006"
     return None
 
@@ -87,7 +80,6 @@ def validate_record(record, jalali_now):
 
     for result in (
         check_required_fields(record),
-        check_string_types(record),
         check_numeric_types(record),
         check_nulls_or_empty(record),
         check_bank_code(record),
@@ -180,6 +172,16 @@ def build_summary(df):
 
 # helper function
 def _is_valid_number(value):
-    is_int = isinstance(value, int) and not isinstance(value, bool)
-    is_whole_float = isinstance(value, float) and value.is_integer()
-    return is_int or is_whole_float
+    if value is None or value == "":
+        return False
+    try:
+        int(value)
+        return True
+    except (ValueError, TypeError):
+        pass
+    try:
+        if float(value).is_integer():
+            return True
+        return False
+    except (ValueError, TypeError):
+        return False

@@ -239,7 +239,7 @@ share its `run_id` belong to that run.
 
     python manage.py test bank_validator
 
-All 132 tests should pass.
+All 118 tests should pass.
 
 ---
 

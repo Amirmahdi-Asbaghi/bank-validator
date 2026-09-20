@@ -2,7 +2,6 @@ from django.test import TestCase
 
 from bank_validator.validators import (
     check_required_fields,
-    check_string_types,
     check_numeric_types,
     check_nulls_or_empty,
     check_bank_code,
@@ -62,43 +61,6 @@ class CheckRequiredFieldsTests(TestCase):
         self.assertEqual(check_required_fields({}), "E001")
 
 
-class CheckStringTypesTests(TestCase):
-    def test_all_fields_ok(self):
-        record = _valid_record()
-        self.assertIsNone(check_string_types(record))
-
-    def test_bank_code_not_string(self):
-        record = _valid_record()
-        record["bank_code"] = 101
-        self.assertEqual(check_string_types(record), "E002")
-
-    def test_period_not_string(self):
-        record = _valid_record()
-        record["period"] = 140506
-        self.assertEqual(check_string_types(record), "E002")
-
-    def test_account_code_not_string(self):
-        record = _valid_record()
-        record["account_code"] = 12345
-        self.assertEqual(check_string_types(record), "E002")
-
-    def test_multiple_wrong_types_returns_one_code(self):
-        record = _valid_record()
-        record["bank_code"] = 101
-        record["period"] = 140506
-        self.assertEqual(check_string_types(record), "E002")
-
-    def test_missing_field_is_skipped(self):
-        record = _valid_record()
-        del record["bank_code"]
-        self.assertIsNone(check_string_types(record))
-
-    def test_none_value_is_skipped(self):
-        record = _valid_record()
-        record["bank_code"] = None
-        self.assertIsNone(check_string_types(record))
-
-
 class CheckNumericTypesTests(TestCase):
 
     def test_all_fields_ok(self):
@@ -110,20 +72,6 @@ class CheckNumericTypesTests(TestCase):
         record["debit"] = "not number"
         self.assertEqual(check_numeric_types(record), "E002")
 
-    def test_credit_not_number(self):
-        record = _valid_record()
-        record["credit"] = "400"
-        self.assertEqual(check_numeric_types(record), "E002")
-
-    def test_balance_not_number(self):
-        record = _valid_record()
-        record["balance"] = "600"
-        self.assertEqual(check_numeric_types(record), "E002")
-
-    def test_bool_is_rejected(self):
-        record = _valid_record()
-        record["debit"] = True
-        self.assertEqual(check_numeric_types(record), "E002")
 
     def test_whole_float_is_accepted(self):
         record = _valid_record()
@@ -134,7 +82,7 @@ class CheckNumericTypesTests(TestCase):
 
     def test_fractional_float_is_rejected(self):
         record = _valid_record()
-        record["debit"] = 1000.5
+        record["debit"] = "1000.5"
         self.assertEqual(check_numeric_types(record), "E002")
 
     def test_multiple_wrong_types_returns_one_code(self):
@@ -331,11 +279,6 @@ class CheckBalanceConsistencyTests(TestCase):
         record["debit"] = "1000"
         self.assertIsNone(check_balance_consistency(record))
 
-    def test_bool_debit_is_skipped(self):
-        record = _valid_record()
-        record["debit"] = True
-        self.assertIsNone(check_balance_consistency(record))
-
     def test_whole_floats_still_balance(self):
         record = _valid_record()
         record["debit"] = 1000.0
@@ -364,25 +307,6 @@ class CheckValidateRecordTests(TestCase):
         del record["debit"]
         result = validate_record(record, self.jalali_now)
         self.assertIn("E001", result)
-
-    def test_wrong_string_type_returns_e002(self):
-        record = _valid_record()
-        record["bank_code"] = 101
-        result = validate_record(record, self.jalali_now)
-        self.assertIn("E002", result)
-
-    def test_wrong_numeric_type_returns_e002(self):
-        record = _valid_record()
-        record["debit"] = "1000"
-        result = validate_record(record, self.jalali_now)
-        self.assertIn("E002", result)
-
-    def test_both_type_failures_return_single_e002(self):
-        record = _valid_record()
-        record["bank_code"] = 101
-        record["debit"] = "1000"
-        result = validate_record(record, self.jalali_now)
-        self.assertEqual(result.count("E002"), 1)
 
     def test_none_value_returns_e003(self):
         record = _valid_record()

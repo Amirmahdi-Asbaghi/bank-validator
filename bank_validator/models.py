@@ -15,9 +15,9 @@ class BankRecord(models.Model):
     account_code = models.CharField(max_length=50)
 
     # null - > DB allows NuLL blank -> forms/admin allow empty
-    debit = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
-    credit = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
-    balance = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    debit = models.CharField(max_length=50, blank=True, default="")
+    credit = models.CharField(max_length=50, blank=True, default="")
+    balance = models.CharField(max_length=50, blank=True, default="")
 
     valid = models.BooleanField(default=False) # sqlite stores it as 0 , 1
     errors = models.JSONField(default=list, blank=True)
