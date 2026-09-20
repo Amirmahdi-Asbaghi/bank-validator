@@ -32,7 +32,8 @@ individual records and a per-run summary, and returns the results as JSON.
 
 ### 1. Get the project
 
-Place the project folder where you want it.
+    git clone https://github.com/Amirmahdi-Asbaghi/bank-validator.git
+    cd bank-validator
 
 ### 2. Create a virtual environment
 
@@ -124,41 +125,30 @@ Fetch all records for a given run. Returns a JSON list of records.
 
 ## Usage Examples
 
+Sample files are provided in `data/` — see the table at the bottom for the full
+list. The commands below use them directly.
+
 ### Upload a CSV file
 
-Save this as `sample.csv`:
+    curl.exe -X POST http://localhost:8000/api/v1/validation/ -F "file=@data/valid.csv"
 
-    bank_code,period,account_code,debit,credit,balance
-    101,1405/03,A001,1000,400,600
-    002,1405/03,A002,500,200,300
-    999,1405/03,A003,800,300,500
+Expected result: `total: 10`, `valid: 10`, `invalid: 0`.
 
-Command:
+To see errors fire, upload `data/mixed.csv` instead:
 
-    curl.exe -X POST http://localhost:8000/api/v1/validation/ -F "file=@sample.csv"
-
-The third row has an invalid `bank_code` (999), so it will be reported as
-invalid with code `E004`.
+    curl.exe -X POST http://localhost:8000/api/v1/validation/ -F "file=@data/mixed.csv"
 
 ### Upload a JSON file
 
-Save this as `sample.json`:
-
-    [
-      {"bank_code": "101", "period": "1405/03", "account_code": "A001", "debit": 1000, "credit": 400, "balance": 600},
-      {"bank_code": "002", "period": "1405/03", "account_code": "A002", "debit": 500, "credit": 200, "balance": 300},
-      {"bank_code": "999", "period": "1405/03", "account_code": "A003", "debit": 800, "credit": 300, "balance": 500}
-    ]
-
-Command:
-
-    curl.exe -X POST http://localhost:8000/api/v1/validation/ -F "file=@sample.json"
+    curl.exe -X POST http://localhost:8000/api/v1/validation/ -F "file=@data/valid.json"
 
 ### POST raw JSON
 
     curl.exe -X POST http://localhost:8000/api/v1/validation/ -H "Content-Type: application/json" -d "[{\"bank_code\":\"101\",\"period\":\"1405/03\",\"account_code\":\"A001\",\"debit\":1000,\"credit\":400,\"balance\":600}]"
 
 ### Fetch records for a run
+
+Use the `run_id` returned by a previous upload:
 
     curl.exe http://localhost:8000/api/v1/runs/d5262ef1-5e56-45de-b554-f2cbc25550d2/
 
@@ -259,11 +249,11 @@ All 132 tests should pass.
 
 Located in `data/`:
 
-| File                            | What it demonstrates                    |
-|---------------------------------|-----------------------------------------|
-| valid.csv                       | 10 rows, all valid                      |
-| mixed.csv                       | 5 valid, 5 invalid (no duplicates)      |
-| invalid_and_duplicates.csv      | all invalid, all duplicated             |
-| valid.json                      | JSON version of valid.csv               |
-| mixed.json                      | JSON version of mixed.csv               |
+| File                            | What it demonstrates                       |
+|---------------------------------|--------------------------------------------|
+| valid.csv                       | 10 rows, all valid                         |
+| mixed.csv                       | 5 valid, 5 invalid (no duplicates)         |
+| invalid_and_duplicates.csv      | all invalid, all duplicated                |
+| valid.json                      | JSON version of valid.csv                  |
+| mixed.json                      | JSON version of mixed.csv                  |
 | invalid_and_duplicates.json     | JSON version of invalid_and_duplicates.csv |
