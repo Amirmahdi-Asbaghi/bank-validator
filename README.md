@@ -22,8 +22,6 @@ individual records and a per-run summary, and returns the results as JSON.
 
 - Django
 - Django REST Framework
-- pandas
-- persiantools (Jalali date handling)
 - SQLite
 
 ---
