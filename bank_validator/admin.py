@@ -9,7 +9,7 @@ class BankRecordAdmin(admin.ModelAdmin):
                     "bank_code", "period", "account_code", "debit", "credit", "balance",
                     "valid", "errors")
 
-    list_filter = ("valid", "errors")
+    list_filter = ("valid")
     search_fields = ("run_id", "timestamp",
                     "bank_code", "period", "account_code", "debit", "credit", "balance",
                     "valid", "errors")
