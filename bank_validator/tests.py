@@ -869,10 +869,6 @@ class ProcessJsonTests(TestCase):
 
 # views.py
 
-
-
-
-
 class ValidationViewTests(TestCase):
 
     def _csv_file(self):
